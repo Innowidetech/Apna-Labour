@@ -1,0 +1,7 @@
+const express = require('express');
+const { getServices } = require('../controllers/user.controller');
+const router = express.Router();
+
+router.get('/services', getServices);
+
+module.exports = router;
