@@ -8,6 +8,7 @@ const adminRouter = require('./routes/admin.route');
 const labourerRouter = require('./routes/labourer.route');
 const customerRouter = require('./routes/customer.route');
 const userRouter = require('./routes/user.router');
+const landingPageRouter = require('./routes/landingPages.route');
 
 const app = express();
 
@@ -20,6 +21,8 @@ app.use('/api/admin', adminRouter);
 app.use('/api/labourer', labourerRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/user', userRouter);
+app.use('/api/landingPages', landingPageRouter);
+
 
 mongoose.connect(process.env.MONGODB_URL)
   .then(() => console.log('Server connected to database.'))
@@ -29,3 +32,9 @@ const port = process.env.PORT || 5000
 app.listen(port, () => {
   console.log(`Server is running at port: ${port}`)
 });
+
+
+
+
+
+

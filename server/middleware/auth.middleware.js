@@ -20,10 +20,24 @@ exports.protect = async (req, res, next) => {
             return res.status(401).json({ message: 'User not found' });
         }
 
-        req.user = user
+        req.user = {
+            id: user._id,
+            role: user.role
+        };
         next();
     }
     catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message })
     }
 };
+
+// Middleware to restrict to specific roles (admin, etc.)
+exports.authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied: Not authorized' });
+        }
+        next();
+    };
+};
+

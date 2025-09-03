@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const LabourerSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+
     address: {
         type: new mongoose.Schema({
             HNo: { type: String, required: true },
@@ -12,14 +13,29 @@ const LabourerSchema = new mongoose.Schema({
         }, { _id: false }),
         required: false
     },
+
     serviceCity: { type: String, required: true },
-    services: [{
-        category: { type: String, required: true },
-        subCategory: { type: String },
-        serviceType: { type: String },
-        approved:{type:Boolean, required:true, default:false}
-    }],
-    availability:{type:Boolean, default:false, required:true},
+    category: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Category',
+        required: true
+    }, // selected during registration
+
+    services: {
+        type: [{
+            subCategory: { type: String, default: null },
+            serviceType: { type: String, default: null },
+            approved: { type: Boolean, default: false, required: true }
+        }],
+        required: false // ✅ optional at registration
+    },
+    role: {
+        type: String,
+        enum: ['Labourer'],
+        default: null
+    },
+
+    isAccepted: { type: Boolean, default: false }
 
 }, { timestamps: true });
 

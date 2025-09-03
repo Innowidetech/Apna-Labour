@@ -13,43 +13,38 @@ const otpTemplate = require('../utils/otpTemplate');
 
 exports.register = async (req, res) => {
     try {
-        const { name, email, password, mobileNumber, role, address, serviceCity, serviceCategories } = req.body;
-        if (!name || !email || !password || !mobileNumber || !['Customer', 'Labourer'].includes(role)) {
-            return res.status(400).json({ message: "Invalid input: All fields are required and role must be valid." })
+        const { name, email, password, mobileNumber } = req.body;
+
+
+        if (!name || !email || !password || !mobileNumber) {
+            return res.status(400).json({ message: "All fields are required." });
         }
 
-        const isActive = role === 'Labourer' ? false : true;
 
-        const hpass = bcrypt.hashSync(password, 10);
-        let customer, labourer;
-        const user = new User({ name, email, password: hpass, mobileNumber, role, isActive });
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: "Email already registered." });
+        }
+
+
+        const hashedPassword = bcrypt.hashSync(password, 10);
+
+        const user = new User({
+            name,
+            email,
+            password: hashedPassword,
+            mobileNumber,
+        });
+
         await user.save();
 
-        if (role === 'Customer') {
-            customer = new Customer({ userId: user._id });
-            await customer.save()
-        }
-        else if (role === 'Labourer') {
-            if (!address || !serviceCity || !Array.isArray(serviceCategories) || !serviceCategories.length) {
-                return res.status(400).json({ message: "Provide all the details." })
-            }
-
-            const formattedServiceCategories = serviceCategories.map(category => ({
-                category: category
-            }));
-
-            labourer = new Labourer({ userId: user._id, address, serviceCity, services: formattedServiceCategories });
-            await labourer.save()
-        }
-
-        const message = role === 'Labourer'
-            ? "Your registration request has been sent to the admin for approval."
-            : "Registration successful.";
-
-        res.status(201).json({ message, user, customer, labourer });
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
+        res.status(201).json({
+            message: "Registration successful.",
+            user,
+        });
+    } catch (err) {
+        console.error("Register error:", err);
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 
@@ -57,8 +52,10 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password, mobileNumber, idToken } = req.body;
-        if ((!password || !email) && !mobileNumber && !idToken) {
-            return res.status(400).json({ message: "Provide (email and password) or mobileNumber or click on google to login" })
+        if (!(email && password) && !mobileNumber && !idToken) {
+            return res.status(400).json({
+                message: "Provide (email and password) or mobileNumber or click on google to login"
+            });
         }
 
         let token, user;
@@ -103,7 +100,7 @@ exports.login = async (req, res) => {
             if (user.role === 'Labourer' && user.isActive != true) {
                 return res.status(409).json({ message: "Registration request not yet approved" })
             }
-            
+
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
             let message = `Your OTP for Apna Labour login is ${otp}`;
@@ -211,4 +208,4 @@ exports.resetPassword = async (req, res) => {
     catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.status })
     }
-};
+};                                        
