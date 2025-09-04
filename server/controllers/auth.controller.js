@@ -34,6 +34,7 @@ exports.register = async (req, res) => {
             email,
             password: hashedPassword,
             mobileNumber,
+            role: "Customer",
         });
 
         await user.save();
