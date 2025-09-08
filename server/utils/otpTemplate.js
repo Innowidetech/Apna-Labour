@@ -66,13 +66,12 @@ const otpTemplate = (otp) => `
 <body>
   <div class="email-container">
     <div class="email-header">
-      <h1>Password Reset OTP</h1>
+      <h1>Apna Labour Login OTP</h1>
     </div>
     <div class="email-body">
       <p>Hello,</p>
-      <p>We received a request to reset your password. Use the OTP below to reset your password. The OTP is valid only for 5 minutes.</p>
+      <p> Apna Labour Login. The OTP is valid only for 5 minutes.</p>
       <div class="otp-box">${otp}</div>
-      <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
     </div>
     <div class="email-footer">
       <p>&copy; 2025 Apna Labour. All rights reserved.</p>

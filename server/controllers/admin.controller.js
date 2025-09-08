@@ -6,7 +6,14 @@ const TrainingDetails = require('../models/TrainingDetails');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
-const { Category, SubCategory, ServiceType } = require('../models/Services')
+const {
+    Category,
+    SubCategory,
+    AppliancesType,
+    ServiceType,
+    SpecificServiceType,
+    Unit
+} = require("../models/Services");
 
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
 const { response } = require('express');
@@ -177,131 +184,200 @@ exports.setTrainingCompleted = async (req, res) => {
 //     }
 // };
 
-exports.createOrAddCategory = async (req, res) => {
+exports.createCategory = async (req, res) => {
     try {
         const { title } = req.body;
-        const imgFile = req.files?.categoryImage?.[0];
+        const imgFile = req.files?.image?.[0];
 
         if (!title || !imgFile) {
-            return res.status(400).json({ message: "Title and img is required" })
+            return res.status(400).json({ message: "Title and image are required" });
         }
 
-        const existingCategory = await Category.findOne({ title });
-        if (existingCategory) {
-            return res.status(409).json({ message: "Category already exists" })
+        const titleExists = await Category.findOne({ title });
+        if (titleExists) {
+            return res.status(409).json({ message: "Category already exists" });
         }
 
         const uploadImage = await uploadMedia(imgFile);
         if (!uploadImage || !uploadImage[0]) {
-            return res.status(500).json({ message: "Image upload failed " })
+            return res.status(500).json({ message: "Image upload failed" });
         }
 
-        const newCategory = new Category({ title, image: uploadImage[0] });
-        await newCategory.save();
+        const category = new Category({ title, image: uploadImage[0] });
+        await category.save();
 
-        return res.status(200).json({ message: "Category added successfully" })
+        return res.status(201).json({ message: "Category added successfully", category });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
-    }
-}
+};
 
-exports.createOrAddSubcategory = async (req, res) => {
+exports.createSubCategory = async (req, res) => {
     try {
-        const { title, CategoryId } = req.body
-        const imgFile = req.files?.subCategoryImage?.[0];
-        if (!title || !imgFile || !CategoryId) {
-            return res.status(400).json({ message: "Title and img is required" })
+        const { title, category } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        if (!title || !imgFile || !category) {
+            return res.status(400).json({ message: "Title, image, and category are required" });
         }
-        const existingCategory = await Category.findById(CategoryId)
+
+        const existingCategory = await Category.findById(category);
         if (!existingCategory) {
-            return res.status(404).json({ message: "Category not found" })
+            return res.status(404).json({ message: "Category not found" });
         }
-        const titleExists = await SubCategory.findOne({ title })
+
+        const titleExists = await SubCategory.findOne({ title, category });
         if (titleExists) {
-            return res.status(409).json({ message: "Subcategory already exists" })
+            return res.status(409).json({ message: "Subcategory already exists under this category" });
         }
-        const uploadImage = await uploadMedia(imgFile)
-        if (!uploadImage || !uploadImage[0]) {
-            return res.status(500).json({ message: "Image upload failed" })
-        }
-        const newSubCategory = new SubCategory({ title, category: existingCategory._id, image: uploadImage[0] })
-        await newSubCategory.save()
-        return res.status(200).json({ message: "Subcategory added successfully" })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
-    }
-}
 
-exports.createOrAddServiceType = async (req, res) => {
-    try {
-        const { title, SubCategoryId, bookingCharge, originalPrice, serviceCharge } = req.body
-        const imgFile = req.files?.serviceTypeImage?.[0];
-        if (!title || !imgFile || !SubCategoryId || !bookingCharge || !originalPrice || !serviceCharge) {
-            return res.status(400).json({ message: "All the fields are required" })
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) {
+            return res.status(500).json({ message: "Image upload failed" });
         }
-        const existingSubCategory = await SubCategory.findById(SubCategoryId)
+
+        const subCat = new SubCategory({ title, category, image: uploadImage[0] });
+        await subCat.save();
+
+        return res.status(201).json({ message: "Subcategory added successfully", subCat });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+exports.createAppliance = async (req, res) => {
+    try {
+        const { title, subCategory } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        if (!title || !imgFile || !subCategory) {
+            return res.status(400).json({ message: "Title, image, and subCategory are required" });
+        }
+
+        const existingSubCategory = await SubCategory.findById(subCategory);
         if (!existingSubCategory) {
-            return res.status(404).json({ message: "Subcategory not found" })
+            return res.status(404).json({ message: "SubCategory not found" });
         }
-        const ExistTitle = await ServiceType.findOne({ title })
 
-        if (ExistTitle) {
-            return res.status(409).json({ message: "Service type already exists" })
+        const titleExists = await AppliancesType.findOne({ title, subCategory });
+        if (titleExists) {
+            return res.status(409).json({ message: "Appliance already exists under this subCategory" });
         }
-        const uploadImage = await uploadMedia(imgFile)
+
+        const uploadImage = await uploadMedia(imgFile);
         if (!uploadImage || !uploadImage[0]) {
-            return res.status(500).json({ message: "Image upload failed" })
+            return res.status(500).json({ message: "Image upload failed" });
         }
-        const newServiceType = new ServiceType({ title, subCategory: existingSubCategory._id, bookingCharge, originalPrice, serviceCharge, image: uploadImage[0] })
-        await newServiceType.save()
-        return res.status(200).json({ message: "Service type added successfully" })
+
+        const appliance = new AppliancesType({ title, subCategory, image: uploadImage[0] });
+        await appliance.save();
+
+        return res.status(201).json({ message: "Appliance added successfully", appliance });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
-    }
-}
+};
 
 
-exports.getCategory = async (req, res) => {
+exports.createServiceType = async (req, res) => {
     try {
-        const category = await Category.find()
-        if (!category.length) {
-            return res.status(404).json({ message: "No category found" })
-        }
-        return res.status(200).json(category)
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
-    }
-}
+        const { title, appliances } = req.body;
+        const imgFile = req.files?.image?.[0];
 
-exports.getSubCategory = async (req, res) => {
-    try {
-        const subCategory = await SubCategory.find()
-        if (!subCategory.length) {
-            return res.status(404).json({ message: "No subcategory found" })
+        if (!title || !imgFile || !appliances) {
+            return res.status(400).json({ message: "Title, image, and appliances are required" });
         }
-        return res.status(200).json(subCategory)
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
-    }
-}
 
-exports.getServiceType = async (req, res) => {
-    try {
-        const serviceType = await ServiceType.find()
-        if (!serviceType.length) {
-            return res.status(404).json({ message: "No service type found" })
+        const existingAppliance = await AppliancesType.findById(appliances);
+        if (!existingAppliance) {
+            return res.status(404).json({ message: "Appliance not found" });
         }
-        return res.status(200).json(serviceType)
+
+        const titleExists = await ServiceType.findOne({ title, appliances });
+        if (titleExists) {
+            return res.status(409).json({ message: "Service already exists under this appliance" });
+        }
+
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) {
+            return res.status(500).json({ message: "Image upload failed" });
+        }
+
+        const service = new ServiceType({ title, appliances, image: uploadImage[0] });
+        await service.save();
+
+        return res.status(201).json({ message: "ServiceType added successfully", service });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
+};
+
+exports.createSpecificService = async (req, res) => {
+    try {
+        const { title, startingPrice, serviceType } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        if (!title || !imgFile || !startingPrice || !serviceType) {
+            return res.status(400).json({ message: "Title, image, startingPrice, and serviceType are required" });
+        }
+
+        const existingService = await ServiceType.findById(serviceType);
+        if (!existingService) {
+            return res.status(404).json({ message: "ServiceType not found" });
+        }
+
+        const titleExists = await SpecificServiceType.findOne({ title, serviceType });
+        if (titleExists) {
+            return res.status(409).json({ message: "Specific Service already exists under this ServiceType" });
+        }
+
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) {
+            return res.status(500).json({ message: "Image upload failed" });
+        }
+
+        const specService = new SpecificServiceType({ title, startingPrice, serviceType, image: uploadImage[0] });
+        await specService.save();
+
+        return res.status(201).json({ message: "Specific Service added successfully", specService });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
-}
+};
+
+exports.createUnit = async (req, res) => {
+    try {
+        const { title, price, discountedPercentage, specificService } = req.body;
+        console.log(req.body)
+        if (!title || !price || !specificService) {
+            return res.status(400).json({ message: "Title, price, and specificService are required" });
+        }
+
+        const existingSpecificService = await SpecificServiceType.findById(specificService);
+        if (!existingSpecificService) {
+            return res.status(404).json({ message: "SpecificService not found" });
+        }
+
+        const titleExists = await Unit.findOne({ title, specificService });
+        if (titleExists) {
+            return res.status(409).json({ message: "Unit already exists under this SpecificService" });
+        }
+
+        const unit = new Unit({
+            title,
+            price: Number(price),
+            discountedPercentage: Number(discountedPercentage),
+            specificService
+        });
+        await unit.save();
+
+        return res.status(201).json({ message: "Unit added successfully", unit });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
 
 exports.delServiceType = async (req, res) => {
     try {

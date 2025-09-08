@@ -1,10 +1,12 @@
 const express = require('express');
 const { protect, authorize } = require('../middleware/auth.middleware');
 const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrainingDetailsAndLabourers, setTrainingCompleted,
-    createOrAddCategory, createOrAddSubcategory, createOrAddServiceType, getCategory, getSubCategory, getServiceType,
+    createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
+    getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers
 } = require('../controllers/admin.controller');
 const multer = require('multer');
+const { route } = require('./customer.route');
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 
@@ -15,13 +17,14 @@ router.patch('/training-status/:id', protect, authorize('Admin'), setTrainingCom
 
 // router.post('/service', protect, upload.fields([{ name: 'categoryImage', maxCount: 1 }, { name: 'subCategoryImage', maxCount: 1 }, { name: 'serviceTypeImage', maxCount: 1 }]), createOrAddService);
 
-router.post('/category', protect, authorize('Admin'), upload.fields([{ name: 'categoryImage', maxCount: 1 }]), createOrAddCategory);
-router.post('/sub-category', protect, authorize('Admin'), upload.fields([{ name: 'subCategoryImage', maxCount: 1 }]), createOrAddSubcategory);
-router.post('/service-type', protect, authorize('Admin'), upload.fields([{ name: 'serviceTypeImage', maxCount: 1 }]), createOrAddServiceType);
+router.post('/category', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createCategory);
+router.post('/sub-category', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createSubCategory);
+router.post('/appliances', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createAppliance);
+router.post('/service-type', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createServiceType);
+router.post('/specific-services', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createSpecificService);
+router.post('/units', protect, authorize('Admin'), createUnit);
 
-router.get('/category', protect, authorize('Admin', 'Customer'), getCategory);
-router.get('/sub-category', protect, authorize('Admin', 'Customer'), getSubCategory);
-router.get('/service-type', protect, authorize('Admin', 'Customer'), getServiceType);
+
 router.delete('/service-type/:id', protect, authorize('Admin'), delServiceType);
 
 router.get('/labourers', protect, authorize('Admin'), getAllLabourers);
