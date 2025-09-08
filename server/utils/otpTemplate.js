@@ -70,7 +70,7 @@ const otpTemplate = (otp) => `
     </div>
     <div class="email-body">
       <p>Hello,</p>
-      <p> Apna Labour Login. The OTP is valid only for 5 minutes.</p>
+      <p> Apna Labour Login. The OTP is valid only for 1 minutes.</p>
       <div class="otp-box">${otp}</div>
     </div>
     <div class="email-footer">

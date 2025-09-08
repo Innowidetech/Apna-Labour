@@ -11,8 +11,6 @@ const { sendEmail } = require('../utils/nodemailer');
 const otpTemplate = require('../utils/otpTemplate');
 
 
-
-
 exports.registerOrLogin = async (req, res) => {
     try {
         const { email, mobileNumber, idToken } = req.body;
@@ -67,12 +65,12 @@ exports.registerOrLogin = async (req, res) => {
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
+            const expiryTime = new Date(Date.now() + 1 * 60 * 1000);
 
             user.otp = otp;
             user.otpExpiry = expiryTime;
             await user.save();
-            const message = `Your OTP code is ${otp}. It will expire in 5 minutes.`;
+            const message = `Your OTP code is ${otp}. It will expire in 1 minutes.`;
             await sendOtpToMobile(mobileNumber, message);
 
             return res.status(200).json({
@@ -95,7 +93,7 @@ exports.registerOrLogin = async (req, res) => {
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
+            const expiryTime = new Date(Date.now() + 1 * 60 * 1000);
 
             user.otp = otp;
             user.otpExpiry = expiryTime;
