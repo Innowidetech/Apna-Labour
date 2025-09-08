@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
-
+const User = require('./models/User');
 const authRouter = require('./routes/auth.route');
 const adminRouter = require('./routes/admin.route');
 const labourerRouter = require('./routes/labourer.route');
@@ -25,8 +25,16 @@ app.use('/api/services', landingPageRouter);
 
 
 mongoose.connect(process.env.MONGODB_URL)
-  .then(() => console.log('Server connected to database.'))
-  .catch(err => { console.error('Error connecting to database', err) });
+  .then(async () => {
+    console.log('Server connected to database ✅');
+
+    // 🔹 Force rebuild indexes based on schema
+    await User.syncIndexes();
+
+  })
+  .catch(err => {
+    console.error('Error connecting to database', err)
+  });
 
 const port = process.env.PORT || 5000
 app.listen(port, () => {
