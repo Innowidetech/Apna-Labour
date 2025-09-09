@@ -145,6 +145,41 @@ exports.verifyOtp = async (req, res) => {
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+exports.resendOtp = async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Generate new OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiryTime = new Date(Date.now() + 1 * 60 * 1000); // valid for 1 minute
+
+        user.otp = otp;
+        user.otpExpiry = expiryTime;
+        await user.save();
+
+        if (user.mobileNumber) {
+            const message = `Your OTP code is ${otp}. It will expire in 1 minutes.`;
+            await sendOtpToMobile(user.mobileNumber, message);
+        } else if (user.email) {
+            await sendEmail(user.email, 'Apna Labour - OTP', otpTemplate(otp));
+        } else {
+            return res.status(400).json({ message: "No email or mobile linked to this account" });
+        }
+
+        return res.status(200).json({
+            message: "OTP resent successfully",
+            userId: user._id
+        });
+
+    } catch (err) {
+        console.error("Resend OTP error:", err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
 
 
 exports.logout = async (req, res) => {
