@@ -11,6 +11,8 @@ const { sendEmail } = require('../utils/nodemailer');
 const otpTemplate = require('../utils/otpTemplate');
 
 
+
+
 exports.registerOrLogin = async (req, res) => {
     try {
         const { email, mobileNumber, idToken } = req.body;

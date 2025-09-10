@@ -3,6 +3,7 @@ const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
 const TrainingDetails = require('../models/TrainingDetails');
 // const Services = require('../models/Services');
+const Notification = require('../models/Notification');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -448,6 +449,32 @@ exports.getAcceptedLabourers = async (req, res) => {
     } catch (error) {
         console.error('Error fetching accepted labourers:', error);
         res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    }
+};
+
+
+exports.createNotificationForAll = async (req, res) => {
+    try {
+        const { title, message } = req.body;
+        if (!title || !message) {
+            return res.status(400).json({ message: "Title & message required" });
+        }
+
+        const users = await User.find({}, "_id"); // get all users
+
+        // ✅ store who created (req.user.id = Admin id)
+        const notifications = users.map(u => ({
+            user: u._id,
+            title,
+            message,
+            createdBy: req.user.id
+        }));
+
+        await Notification.insertMany(notifications);
+
+        res.status(201).json({ message: "Notification sent to all users" });
+    } catch (err) {
+        res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 

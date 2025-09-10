@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
+require("dotenv").config();
 const TrainingDetails = require('../models/TrainingDetails');
 const Cart = require('../models/Cart');
 const Booking = require("../models/Booking");
@@ -10,8 +11,14 @@ const Notification = require("../models/Notification");
 const Dispute = require("../models/Dispute");
 const { Category, SubCategory, AppliancesType, ServiceType, SpecificServiceType, Unit } = require("../models/Services");
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
-
+const Razorpay = require("razorpay");
 const crypto = require("crypto");
+
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_SECRET_KEY,
+});
+
 
 exports.createOrAddReview = async (req, res) => {
     try {
@@ -41,80 +48,89 @@ exports.createOrAddReview = async (req, res) => {
 
 exports.addToCart = async (req, res) => {
     try {
-        const customerId = req.user.id;
-        const { serviceId } = req.body;
+        const userId = req.user.id; // or req.user._id if you fix middleware
+        const { unitId, quantity } = req.body;
 
-        const customer = await User.findById({ _id: customerId, role: 'Customer' });
-        if (!customer) {
-            return res.status(404).json({ message: "Customer not found" });
+        if (!unitId) return res.status(400).json({ message: "unitId is required" });
+
+        const unit = await Unit.findById(unitId);
+        if (!unit) return res.status(404).json({ message: "Unit not found" });
+
+        let finalPrice = unit.price;
+        if (unit.discountedPercentage) {
+            finalPrice = unit.price - (unit.price * unit.discountedPercentage) / 100;
         }
-        let cart = await Cart.findOne({ customer: customerId });
+
+        let cart = await Cart.findOne({ user: userId });
 
         if (!cart) {
-            // create new cart
             cart = new Cart({
-                customer: customerId,
-                services: [{ service: serviceId }],
+                user: userId,
+                items: [{ unit: unitId, quantity: quantity || 1, price: finalPrice }],
             });
         } else {
-            const exists = cart.services.find(item => item.service.toString() === serviceId);
-            if (exists) {
-                return res.status(409).json({ message: "Service already in cart" });
+            const itemIndex = cart.items.findIndex(item => item.unit.toString() === unitId);
+            if (itemIndex > -1) {
+                cart.items[itemIndex].quantity += quantity || 1;
+            } else {
+                cart.items.push({ unit: unitId, quantity: quantity || 1, price: finalPrice });
             }
-            cart.services.push({ service: serviceId });
         }
 
         await cart.save();
-        return res.status(200).json({ message: "Service added to cart", cart });
+        res.status(200).json({ message: "Item added to cart", cart });
+    } catch (err) {
+        res.status(500).json({ message: "Internal server error", error: err.message });
     }
+};
 
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
-    }
-}
 
 
 exports.removeFromCart = async (req, res) => {
     try {
-        const customerId = req.user.id;
-        const serviceId = req.params.serviceId;
+        const userId = req.user.id;
+        const { unitId } = req.params;
 
-        const cart = await Cart.findOne({ customer: customerId });
+        const cart = await Cart.findOne({ user: userId });
+        if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-        if (!cart) {
-            return res.status(404).json({ message: "Cart not found" });
-        }
-        const initialLength = cart.services.length;
-        // Filter out the service to remove
-        cart.services = cart.services.filter((item) => {
-            return item.service.toString() !== serviceId;
-        });
-
-        if (cart.services.length === initialLength) {
-            return res.status(404).json({ message: "Service not found in cart" });
-        }
+        // Compare with item._id instead of item.unit
+        cart.items = cart.items.filter((item) => item._id.toString() !== unitId);
 
         await cart.save();
 
-        res.status(200).json({ message: "Item removed from cart", cart });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+        return res.status(200).json({ message: "Item removed from cart", cart });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 
-exports.getCartItems = async (req, res) => {
+
+exports.getCart = async (req, res) => {
     try {
-        const customerId = req.user.id;
+        const userId = req.user.id;
+        const cart = await Cart.findOne({ user: userId }).populate("items.unit");
 
-        const cartItems = await Cart.find({ customer: customerId }).populate('services.service');
+        if (!cart || cart.items.length === 0) {
+            return res.status(200).json({
+                message: "Cart is empty",
+                items: [],
+                totalPrice: 0
+            });
+        }
 
-        res.status(200).json({
-            message: 'Cart items fetched successfully',
-            cart: cartItems
+        // calculate total
+        const totalPrice = cart.items.reduce((acc, item) => {
+            return acc + item.price * item.quantity;
+        }, 0);
+
+        return res.status(200).json({
+            message: "Cart fetched successfully",
+            items: cart.items,
+            totalPrice,
         });
-    } catch (error) {
-        console.error('Error fetching cart:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 
@@ -255,7 +271,6 @@ exports.updateCustomerProfile = async (req, res) => {
         const imgFile = req.file;
         if (imgFile) {
             const uploadImage = await uploadMedia(imgFile);
-            console.log("📸 Cloudinary Upload Response:", uploadImage);
 
             if (!uploadImage || !uploadImage[0]) {
                 return res.status(500).json({ message: "Image upload failed" });
@@ -397,3 +412,156 @@ exports.getUnitsBySpecificService = async (req, res) => {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+
+
+exports.createBooking = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { bookingDate, timeSlot, paymentMethod, tip = 0 } = req.body;
+
+        // Check address
+        const customer = await Customer.findOne({ userId });
+        if (!customer || !customer.address || !customer.address.HNo) {
+            return res
+                .status(400)
+                .json({ message: "Please add your address before proceeding with booking" });
+        }
+
+        // Get Cart
+        const cart = await Cart.findOne({ user: userId }).populate("items.unit");
+        if (!cart || cart.items.length === 0) {
+            return res.status(400).json({ message: "Cart is empty" });
+        }
+
+        // Calculate amounts
+        let subtotal = 0;
+        cart.items.forEach((item) => {
+            subtotal += item.price * item.quantity;
+        });
+
+        const tax = subtotal * 0.1; // 10% tax
+        const totalAmount = subtotal + tax + tip;
+
+        // If Razorpay → create order
+        if (paymentMethod === "Razorpay") {
+            const order = await razorpay.orders.create({
+                amount: Math.round(totalAmount * 100), // paise
+                currency: "INR",
+                receipt: `receipt_${Date.now()}`,
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: "Razorpay order created",
+                orderId: order.id,
+                amount: totalAmount,
+                currency: "INR",
+            });
+        }
+
+        // If COD → save booking directly
+        const booking = new Booking({
+            user: userId,
+            items: cart.items,
+            subtotal,
+            tax,
+            tip,
+            totalAmount,
+            bookingDate,
+            timeSlot,
+            status: "Pending",
+            paymentMethod: "COD",
+        });
+
+        await booking.save();
+
+        // Clear cart
+        cart.items = [];
+        await cart.save();
+
+        return res.status(201).json({
+            message: "Booking created successfully with COD",
+            booking,
+        });
+    } catch (err) {
+        console.error("Booking Error:", err);
+        return res
+            .status(500)
+            .json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+exports.verifyPayment = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { orderId, paymentId, signature, bookingDate, timeSlot, tip = 0 } =
+            req.body;
+
+        // Verify signature
+        // const body = orderId + "|" + paymentId;
+        // const expectedSignature = crypto
+        //     .createHmac("sha256", process.env.RAZORPAY_SECRET_KEY)
+        //     .update(body.toString())
+        //     .digest("hex");
+
+        // if (expectedSignature !== signature) {
+        //     return res.status(400).json({ message: "Invalid payment signature" });
+        // }
+
+        // Get Cart
+        const cart = await Cart.findOne({ user: userId }).populate("items.unit");
+        if (!cart || cart.items.length === 0) {
+            return res.status(400).json({ message: "Cart is empty" });
+        }
+
+        // Get customer for address
+        const customer = await Customer.findOne({ userId });
+
+        // Calculate amounts again
+        let subtotal = 0;
+        cart.items.forEach((item) => {
+            subtotal += item.price * item.quantity;
+        });
+
+        const tax = subtotal * 0.1;
+        const totalAmount = subtotal + tax + tip;
+
+        // Save booking
+        const booking = new Booking({
+            user: userId,
+            items: cart.items,
+            subtotal,
+            tax,
+            tip,
+            totalAmount,
+            bookingDate,
+            timeSlot,
+            status: "Confirmed",
+            paymentMethod: "Razorpay",
+            paymentId,
+            orderId,
+            signature,
+        });
+
+        await booking.save();
+
+        // Clear cart
+        cart.items = [];
+        await cart.save();
+
+        return res
+            .status(201)
+            .json({ message: "Booking confirmed successfully", booking });
+    } catch (err) {
+        console.error("Verify Payment Error:", err);
+        return res
+            .status(500)
+            .json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+
+
+

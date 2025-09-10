@@ -3,7 +3,7 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrainingDetailsAndLabourers, setTrainingCompleted,
     createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
-    delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers
+    delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -24,6 +24,7 @@ router.post('/service-type', protect, authorize('Admin'), upload.fields([{ name:
 router.post('/specific-services', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createSpecificService);
 router.post('/units', protect, authorize('Admin'), createUnit);
 
+router.post('/notifications', protect, authorize('Admin'), createNotificationForAll);
 
 router.delete('/service-type/:id', protect, authorize('Admin'), delServiceType);
 
