@@ -116,6 +116,7 @@ exports.registerOrLogin = async (req, res) => {
     }
 };
 
+// controllers/authController.js
 exports.verifyOtp = async (req, res) => {
     try {
         const { userId, otp } = req.body;
@@ -123,30 +124,35 @@ exports.verifyOtp = async (req, res) => {
         const user = await User.findById(userId);
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        if (user.otp !== otp || new Date() > user.otpExpiry) {
-            return res.status(400).json({ message: "Invalid or expired OTP" });
+        // Check if OTP is expired
+        if (!user.otp || !user.otpExpiry || user.otpExpiry < new Date()) {
+            user.otp = null;
+            user.otpExpiry = null;
+            await user.save();
+            return res.status(400).json({ message: "OTP expired" });
         }
 
-        // clear OTP
+        // Check if OTP matches
+        if (user.otp !== otp) {
+            return res.status(400).json({ message: "Invalid OTP" });
+        }
+
+        // ✅ OTP is correct → clear it after successful login
         user.otp = null;
         user.otpExpiry = null;
         await user.save();
 
         const token = jwt.sign(
-            { userId: user._id, email: user.email, mobileNumber: user.mobileNumber, role: user.role },
+            { userId: user._id, email: user.email, role: user.role },
             process.env.JWT_SECRET
         );
 
-        res.status(200).json({
-            message: "Login  successfully",
-            token,
-            user,
-        });
+        return res.status(200).json({ message: "OTP verified", token, user });
     } catch (err) {
-        console.error("Verify OTP error:", err);
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+
 exports.resendOtp = async (req, res) => {
     try {
         const { userId } = req.body;

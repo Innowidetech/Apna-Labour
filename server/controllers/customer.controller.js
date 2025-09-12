@@ -9,6 +9,7 @@ const Payment = require("../models/Payment");
 const Review = require("../models/Review");
 const Notification = require("../models/Notification");
 const Dispute = require("../models/Dispute");
+const Cancellation = require("../models/Cancellation");
 const { Category, SubCategory, AppliancesType, ServiceType, SpecificServiceType, Unit } = require("../models/Services");
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
 const Razorpay = require("razorpay");
@@ -48,7 +49,7 @@ exports.createOrAddReview = async (req, res) => {
 
 exports.addToCart = async (req, res) => {
     try {
-        const userId = req.user.id; // or req.user._id if you fix middleware
+        const userId = req.user.id;
         const { unitId, quantity } = req.body;
 
         if (!unitId) return res.status(400).json({ message: "unitId is required" });
@@ -89,13 +90,15 @@ exports.addToCart = async (req, res) => {
 exports.removeFromCart = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { unitId } = req.params;
+        const { unitId } = req.params; // this is the Unit _id
 
         const cart = await Cart.findOne({ user: userId });
         if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-        // Compare with item._id instead of item.unit
-        cart.items = cart.items.filter((item) => item._id.toString() !== unitId);
+        // Compare with item.unit instead of item._id
+        cart.items = cart.items.filter(
+            (item) => item.unit.toString() !== unitId
+        );
 
         await cart.save();
 
@@ -104,6 +107,7 @@ exports.removeFromCart = async (req, res) => {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+
 
 
 exports.getCart = async (req, res) => {
@@ -221,52 +225,105 @@ exports.searchServices = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
     try {
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.id;
 
-
+        // user details
         const user = await User.findById(userId).select("-password");
 
-
-        const bookings = await Booking.find({ user: userId });
+        //  bookings with unit details inside items
+        const bookings = await Booking.find({ user: userId })
+            .populate("items.unit", "title price description image "); // populate unit fields
 
         const customer = await Customer.findOne({ userId });
 
-
-        const canceledBookings = bookings.filter(b => b.status === "cancelled");
-
-
-        const payments = await Payment.find({ user: userId });
+        const canceledBookings = bookings.filter(b => b.status === "Cancelled");
 
 
-        const reviews = await Review.find({ user: userId });
+        let reviewFilter = { userId };
+        const { reviewPeriod } = req.query; // frontend can pass ?reviewPeriod=2025 or last30
 
+        if (reviewPeriod) {
+            if (reviewPeriod === "last30") {
+                const last30 = new Date();
+                last30.setDate(last30.getDate() - 30);
+                reviewFilter.createdAt = { $gte: last30 };
+            } else if (!isNaN(reviewPeriod)) {
+                // numeric year like 2025, 2024
+                const start = new Date(`${reviewPeriod}-01-01T00:00:00.000Z`);
+                const end = new Date(`${parseInt(reviewPeriod) + 1}-01-01T00:00:00.000Z`);
+                reviewFilter.createdAt = { $gte: start, $lt: end };
+            }
+        }
 
+        //  reviews with target populated
+        const reviews = await Review.find(reviewFilter)
+            .populate({
+                path: "targetId",
+                select: "title name", // unit.title or labourer.name
+            })
+            .sort({ createdAt: -1 });
+
+        //  notifications
         const notifications = await Notification.find({ user: userId }).sort({ createdAt: -1 });
 
 
         const disputes = await Dispute.find({ user: userId });
-        res.status(200).json({
+
+        //  booking items only (with unit details)
+        const bookingItems = bookings.map(b => ({
+            _id: b._id,
+            status: b.status,
+            bookingDate: b.bookingDate,
+            timeSlot: b.timeSlot,
+            items: b.items.map(item => ({
+                _id: item._id,
+                unit: item.unit,
+                quantity: item.quantity,
+                price: item.price,
+            })),
+        }));
+
+        //  payments include unit details
+        const payments = bookings.map(b => ({
+            _id: b._id,
+            items: b.items.map(item => ({
+                _id: item._id,
+                unit: item.unit,
+                quantity: item.quantity,
+                price: item.price,
+            })),
+            totalAmount: b.totalAmount,
+            paymentId: b.paymentId,
+            orderId: b.orderId,
+            signature: b.signature,
+            paymentMethod: b.paymentMethod,
+            status: b.status,
+            bookedAt: b.bookedAt,
+        }));
+
+        return res.status(200).json({
             message: "Profile data fetched successfully",
             profile: {
                 user,
                 customer,
-                bookings,
-                canceledBookings,
+                bookings: bookingItems,
                 payments,
-                reviews,
+                reviews, //  now filtered
                 notifications,
-                disputes,
+                canceledBookings,
+
             },
         });
     } catch (err) {
         console.error("Profile API Error:", err);
-        res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 
+
+
 exports.updateCustomerProfile = async (req, res) => {
     try {
-        console.log("Received request:", req.method, req.body, req.files, req.user);
         const updateData = {};
         const imgFile = req.file;
         if (imgFile) {
@@ -333,7 +390,7 @@ exports.updateUserStatus = async (req, res) => {
         res.status(500).json({ message: "Something went wrong" });
     }
 };
-// 📌 Get all Categories
+//  Get all Categories
 exports.getCategories = async (req, res) => {
     try {
         const categories = await Category.find().sort({ createdAt: -1 });
@@ -343,7 +400,7 @@ exports.getCategories = async (req, res) => {
     }
 };
 
-// 📌 Get SubCategories by CategoryId
+//  Get SubCategories by CategoryId
 exports.getSubCategoriesByCategory = async (req, res) => {
     try {
         const { categoryId } = req.params;
@@ -357,7 +414,7 @@ exports.getSubCategoriesByCategory = async (req, res) => {
     }
 };
 
-// 📌 Get Appliances by SubCategoryId
+//  Get Appliances by SubCategoryId
 exports.getAppliancesBySubCategory = async (req, res) => {
     try {
         const { subCategoryId } = req.params;
@@ -371,7 +428,7 @@ exports.getAppliancesBySubCategory = async (req, res) => {
     }
 };
 
-// 📌 Get ServiceTypes by ApplianceId
+//  Get ServiceTypes by ApplianceId
 exports.getServiceTypesByAppliance = async (req, res) => {
     try {
         const { applianceId } = req.params;
@@ -385,7 +442,7 @@ exports.getServiceTypesByAppliance = async (req, res) => {
     }
 };
 
-// 📌 Get SpecificServices by ServiceTypeId
+//  Get SpecificServices by ServiceTypeId
 exports.getSpecificServicesByServiceType = async (req, res) => {
     try {
         const { serviceTypeId } = req.params;
@@ -399,7 +456,7 @@ exports.getSpecificServicesByServiceType = async (req, res) => {
     }
 };
 
-// 📌 Get Units by SpecificServiceId
+//  Get Units by SpecificServiceId
 exports.getUnitsBySpecificService = async (req, res) => {
     try {
         const { specificServiceId } = req.params;
@@ -562,6 +619,213 @@ exports.verifyPayment = async (req, res) => {
 };
 
 
+exports.markNotificationAsRead = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id; // from auth middleware
+
+        const notification = await Notification.findOneAndUpdate(
+            { _id: id, user: userId },   // ✅ ensures user can update only his own
+            { read: true },
+            { new: true }
+        );
+
+        if (!notification) {
+            return res.status(404).json({ message: "Notification not found" });
+        }
+
+        res.status(200).json({
+            message: "Notification marked as read",
+            notification,
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+//  Mark all notifications as read
+exports.markAllNotificationsAsRead = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const result = await Notification.updateMany(
+            { user: userId, read: false },
+            { $set: { read: true } }
+        );
+
+        res.status(200).json({
+            message: "All notifications marked as read",
+            modifiedCount: result.modifiedCount,
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+//  Delete a single notification
+exports.deleteNotification = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id; // from auth middleware
+
+        const notification = await Notification.findOneAndDelete({
+            _id: id,
+            user: userId, // ensure user can delete only their own
+        });
+
+        if (!notification) {
+            return res.status(404).json({ message: "Notification not found" });
+        }
+
+        res.status(200).json({
+            message: "Notification deleted successfully",
+            notificationId: id,
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+// Add a Review for a Unit
+exports.addUnitReview = async (req, res) => {
+    try {
+        const userId = req.user.id; // from auth middleware
+        const { unitId } = req.params;
+        const { rating, feedback } = req.body;
+
+        // Validate unit exists
+        const unit = await Unit.findById(unitId);
+        if (!unit) return res.status(404).json({ message: "Unit not found" });
+
+        // Check if user already reviewed this unit (optional)
+        const existingReview = await Review.findOne({ userId, targetId: unitId, targetType: "Unit" });
+        if (existingReview) {
+            return res.status(400).json({ message: "You already reviewed this unit" });
+        }
+
+        const review = new Review({
+            targetType: "Unit",
+            targetId: unitId,
+            userId,
+            rating,
+            feedback,
+        });
+
+        await review.save();
+        return res.status(201).json({ message: "Review added successfully", review });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+//  Edit a Review for a Unit
+exports.editUnitReview = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { reviewId } = req.params;
+        const { rating, feedback } = req.body;
+
+        const review = await Review.findOne({ _id: reviewId, userId, targetType: "Unit" });
+        if (!review) return res.status(404).json({ message: "Review not found or unauthorized" });
+
+        if (rating) review.rating = rating;
+        if (feedback) review.feedback = feedback;
+
+        await review.save();
+        return res.status(200).json({ message: "Review updated successfully", review });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+exports.deleteUnitReview = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { reviewId } = req.params;
+
+        const review = await Review.findOneAndDelete({ _id: reviewId, userId, targetType: "Unit" });
+        if (!review) return res.status(404).json({ message: "Review not found or unauthorized" });
+
+        return res.status(200).json({ message: "Review deleted successfully" });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+exports.getUnitReviews = async (req, res) => {
+    try {
+        const { unitId } = req.params;
+
+        const reviews = await Review.find({ targetType: "Unit", targetId: unitId })
+            .populate("userId", "name email")
+            .sort({ createdAt: -1 });
+
+        if (!reviews || reviews.length === 0) {
+            return res.status(404).json({ message: "No reviews found for this unit" });
+        }
+
+
+        const avgRating =
+            reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+
+        return res.status(200).json({
+            totalReviews: reviews.length,
+            averageRating: avgRating.toFixed(1),
+            reviews,
+        });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+exports.cancelBooking = async (req, res) => {
+    try {
+        const bookingId = req.params.id;
+        const userId = req.user.id;
+
+        console.log("Cancel Booking:", { bookingId, userId });
+
+        const { reason, comments, refund } = req.body;
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
+        }
+
+        if (booking.status === "Cancelled") {
+            return res.status(400).json({ message: "Booking is already cancelled" });
+        }
+
+        const existingCancellation = await Cancellation.findOne({ bookingId });
+        if (existingCancellation) {
+            return res.status(400).json({ message: "Booking already cancelled" });
+        }
+
+        //  Create cancellation record
+        await Cancellation.create({
+            bookingId,
+            userId,
+            reason,
+            comments,
+            refund,
+        });
+
+        //  Update booking status safely
+        booking.status = "Cancelled";
+        await booking.save();
+
+        return res.status(201).json({
+            message: "Booking cancelled successfully",
+            booking,
+        });
+    } catch (err) {
+        console.error("Cancel Booking Error:", err);
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
 
 
 

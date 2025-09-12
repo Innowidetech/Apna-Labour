@@ -22,7 +22,7 @@ const bookingSchema = new mongoose.Schema(
         bookingDate: { type: Date, required: true },
         timeSlot: { type: String, required: true }, // e.g., "8:00 AM - 9:00 AM"
 
-        // Status of booking
+
         status: {
             type: String,
             enum: ["Pending", "Confirmed", "Cancelled"],
