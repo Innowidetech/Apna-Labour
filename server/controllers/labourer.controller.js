@@ -68,4 +68,3 @@ exports.registerLabourer = async (req, res) => {
     }
 };
 
-

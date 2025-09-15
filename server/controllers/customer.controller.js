@@ -46,7 +46,6 @@ exports.createOrAddReview = async (req, res) => {
     }
 }
 
-
 exports.addToCart = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -84,7 +83,6 @@ exports.addToCart = async (req, res) => {
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
-
 
 
 exports.removeFromCart = async (req, res) => {

@@ -28,7 +28,6 @@ router.get('/profile', protect, authorize('Customer'), getProfile);
 router.put("/profile", protect, authorize("Customer"), upload.single("image"), updateCustomerProfile);
 router.patch("/:id/status", protect, authorize("Customer"), updateUserStatus);
 
-// Step 1: Create booking or Razorpay order
 router.post("/bookings/create", protect, createBooking);
 router.post("/bookings/verify", protect, verifyPayment);
 
