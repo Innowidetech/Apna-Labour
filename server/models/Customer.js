@@ -12,7 +12,8 @@ const CustomerSchema = new mongoose.Schema({
         area: { type: String },
         landmark: { type: String },
         townCity: { type: String },
-        pincode: { type: Number }
+        pincode: { type: Number },
+        state: { type: String },
     }
 }, { timestamps: true });
 

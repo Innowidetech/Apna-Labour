@@ -340,7 +340,7 @@ exports.updateCustomerProfile = async (req, res) => {
         if (req.body.email) updateData.email = req.body.email;
 
         // Address fields
-        const addressFields = ["HNo", "street", "area", "landmark", "townCity", "pincode"];
+        const addressFields = ["HNo", "street", "area", "landmark", "townCity", "pincode", "state"];
         addressFields.forEach(field => {
             const key = `address.${field}`;
             if (req.body[key]) {

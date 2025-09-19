@@ -43,7 +43,6 @@ exports.registerOrLogin = async (req, res) => {
             const token = jwt.sign(
                 { userId: user._id, email: user.email, role: user.role },
                 process.env.JWT_SECRET,
-                { expiresIn: "7d" }
             );
 
             return res.status(200).json({
@@ -226,27 +225,4 @@ exports.logout = async (req, res) => {
 //     }
 // };
 
-
-// exports.resetPassword = async (req, res) => {
-//     try {
-//         const { email, otp, password } = req.body;
-//         if (!email || !otp || !password) { return res.status(400).json({ message: "Please provide all the details to reset password" }) }
-
-//         const user = await User.findOne({ email });
-//         if (!user) { return res.status(404).json({ message: "Invalid email" }) }
-
-//         if (otp != user.otp) { return res.status(400).json({ message: 'Invalid otp' }) }
-
-//         const hpass = bcrypt.hashSync(password, 10);
-
-//         user.password = hpass;
-//         user.otp = undefined;
-//         user.otpExpiry = undefined
-//         user.save()
-
-//         res.status(200).json({ message: "Password reset successfully" })
-//     }
-//     catch (err) {
-//         return res.status(500).json({ message: "Internal server error", error: err.status })
-//     }
-// };                                        
+                                       
