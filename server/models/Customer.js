@@ -5,7 +5,7 @@ const CustomerSchema = new mongoose.Schema({
     image: { type: String }, // store image URL or file path
     gender: { type: String, enum: ['Male', 'Female'] },
     phoneNumber: { type: String },
-    email: { type: String },
+    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true, match: [/\S+@\S+\.\S+/, 'Invalid email address'] },
     address: {
         HNo: { type: String },
         street: { type: String },

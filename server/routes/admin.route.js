@@ -3,7 +3,7 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrainingDetailsAndLabourers, setTrainingCompleted,
     createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
-    delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll
+    delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -32,5 +32,5 @@ router.get('/labourers', protect, authorize('Admin'), getAllLabourers);
 router.patch('/accept-applicant/:id', protect, authorize('Admin'), acceptApplicant);
 router.get('/labourers/accepted', protect, authorize('Admin'), getAcceptedLabourers);
 
-
+router.get("/contacts", protect, authorize("Admin"), getContacts);
 module.exports = router;

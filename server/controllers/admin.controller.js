@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
 const TrainingDetails = require('../models/TrainingDetails');
+const Contact = require('../models/Contact');
 // const Services = require('../models/Services');
 const Notification = require('../models/Notification');
 const multer = require('multer');
@@ -478,3 +479,11 @@ exports.createNotificationForAll = async (req, res) => {
     }
 };
 
+exports.getContacts = async (req, res) => {
+    try {
+        const contacts = await Contact.find().sort({ createdAt: -1 });
+        return res.status(200).json(contacts);
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
