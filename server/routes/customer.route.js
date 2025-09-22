@@ -17,12 +17,12 @@ router.post('/book-service', protect, authorize('Customer'), bookService);
 router.post('/book-labourer', protect, authorize('Customer'), bookLabourer);
 router.get('/search-services', protect, authorize('Customer'), searchServices);
 
-router.get("/categories", authorize('Customer'), getCategories);
-router.get("/categories/:categoryId/subcategories", getSubCategoriesByCategory);
-router.get("/subcategories/:subCategoryId/appliances", getAppliancesBySubCategory);
-router.get("/appliances/:applianceId/services", getServiceTypesByAppliance);
-router.get("/services/:serviceTypeId/specific-services", getSpecificServicesByServiceType);
-router.get("/specific-services/:specificServiceId/units", getUnitsBySpecificService);
+router.get("/categories", getCategories);
+router.get("/categories/subcategories/:id", getSubCategoriesByCategory);
+router.get("/subcategories/appliances/:id", getAppliancesBySubCategory);
+router.get("/appliances/services/:id", getServiceTypesByAppliance);
+router.get("/services/specific-services/:id", getSpecificServicesByServiceType);
+router.get("/specific-services/units/:id", getUnitsBySpecificService);
 
 router.get('/profile', protect, authorize('Customer'), getProfile);
 router.put("/profile", protect, authorize("Customer"), upload.single("image"), updateCustomerProfile);

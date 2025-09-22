@@ -216,7 +216,8 @@ exports.createCategory = async (req, res) => {
 
 exports.createSubCategory = async (req, res) => {
     try {
-        const { title, category } = req.body;
+        const { title, CategoryId } = req.body;
+        const category = CategoryId;
         const imgFile = req.files?.image?.[0];
 
         if (!title || !imgFile || !category) {
