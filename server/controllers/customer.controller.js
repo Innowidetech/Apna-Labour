@@ -10,7 +10,7 @@ const Review = require("../models/Review");
 const Notification = require("../models/Notification");
 const Dispute = require("../models/Dispute");
 const Cancellation = require("../models/Cancellation");
-const { Category, SubCategory, AppliancesType, ServiceType, SpecificServiceType, Unit } = require("../models/Services");
+const { Category, SubCategory, AppliancesType, ServiceType, SpecificService, Unit, HeroSection } = require("../models/Services");
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
@@ -402,7 +402,7 @@ exports.getCategories = async (req, res) => {
 //  Get SubCategories by CategoryId
 exports.getSubCategoriesByCategory = async (req, res) => {
     try {
-        const { id } = req.params; 
+        const { id } = req.params;
         const category = await Category.findById(id);
         if (!category) return res.status(404).json({ message: "Category not found" });
 
@@ -445,13 +445,48 @@ exports.getServiceTypesByAppliance = async (req, res) => {
 exports.getSpecificServicesByServiceType = async (req, res) => {
     try {
         const { id } = req.params;
-        const service = await ServiceType.findById(id);
-        if (!service) return res.status(404).json({ message: "ServiceType not found" });
 
-        const specificServices = await SpecificServiceType.find({ serviceType: id }).sort({ createdAt: -1 });
-        return res.status(200).json(specificServices);
+        const service = await ServiceType.findById(id);
+        if (!service)
+            return res.status(404).json({ message: "ServiceType not found" });
+
+        // Get specific services for this serviceType
+        const specificServices = await SpecificService.find({ serviceType: id }).sort({ createdAt: -1 });
+
+        // Enrich each specificService with totalReviews + averageRating
+        const result = await Promise.all(
+            specificServices.map(async (specService) => {
+                // find all units under this specificService
+                const units = await Unit.find({ specificService: specService._id }).select("_id");
+
+                const unitIds = units.map((u) => u._id);
+
+                // get reviews for these units
+                const reviews = await Review.find({
+                    targetId: { $in: unitIds },
+                    targetType: "Unit",
+                });
+
+                const totalReviews = reviews.length;
+                const averageRating =
+                    totalReviews > 0
+                        ? reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews
+                        : 0;
+
+                return {
+                    ...specService.toObject(),
+                    totalReviews,
+                    averageRating: Number(averageRating.toFixed(1)),
+                };
+            })
+        );
+
+        return res.status(200).json(result);
     } catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
@@ -459,13 +494,42 @@ exports.getSpecificServicesByServiceType = async (req, res) => {
 exports.getUnitsBySpecificService = async (req, res) => {
     try {
         const { id } = req.params;
-        const specService = await SpecificServiceType.findById(id);
-        if (!specService) return res.status(404).json({ message: "SpecificService not found" });
+        const specService = await SpecificService.findById(id);
+        if (!specService)
+            return res.status(404).json({ message: "SpecificService not found" });
 
-        const units = await Unit.find({ specificService: id }).sort({ createdAt: -1 });
-        return res.status(200).json(units);
+        const units = await Unit.find({ specificService: id }).sort({
+            createdAt: -1,
+        });
+
+        // Enrich units with review stats
+        const result = await Promise.all(
+            units.map(async (unit) => {
+                const reviews = await Review.find({
+                    targetId: unit._id,
+                    targetType: "Unit",
+                });
+
+                const totalReviews = reviews.length;
+                const averageRating =
+                    totalReviews > 0
+                        ? reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews
+                        : 0;
+
+                return {
+                    ...unit.toObject(),
+                    totalReviews,
+                    averageRating: Number(averageRating.toFixed(1)),
+                };
+            })
+        );
+
+        return res.status(200).json(result);
     } catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
@@ -544,6 +608,24 @@ exports.createBooking = async (req, res) => {
         return res
             .status(500)
             .json({ message: "Internal server error", error: err.message });
+    }
+};
+
+exports.getHeroByCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Find hero section where category matches
+        const heroSection = await HeroSection.findOne({ category: id })
+            .populate('title image'); // populate category info
+
+        if (!heroSection) {
+            return res.status(404).json({ message: 'Hero section not found for this category' });
+        }
+
+        return res.status(200).json(heroSection);
+    } catch (err) {
+        return res.status(500).json({ message: 'Internal server error', error: err.message });
     }
 };
 

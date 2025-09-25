@@ -13,7 +13,8 @@ const {
     SubCategory,
     AppliancesType,
     ServiceType,
-    SpecificServiceType,
+    SpecificService,
+    HeroSection,
     Unit
 } = require("../models/Services");
 
@@ -329,7 +330,7 @@ exports.createSpecificService = async (req, res) => {
             return res.status(404).json({ message: "ServiceType not found" });
         }
 
-        const titleExists = await SpecificServiceType.findOne({ title, serviceType });
+        const titleExists = await SpecificService.findOne({ title, serviceType });
         if (titleExists) {
             return res.status(409).json({ message: "Specific Service already exists under this ServiceType" });
         }
@@ -339,7 +340,7 @@ exports.createSpecificService = async (req, res) => {
             return res.status(500).json({ message: "Image upload failed" });
         }
 
-        const specService = new SpecificServiceType({ title, startingPrice, serviceType, image: uploadImage[0] });
+        const specService = new SpecificService({ title, startingPrice, serviceType, image: uploadImage[0] });
         await specService.save();
 
         return res.status(201).json({ message: "Specific Service added successfully", specService });
@@ -348,39 +349,100 @@ exports.createSpecificService = async (req, res) => {
     }
 };
 
+
 exports.createUnit = async (req, res) => {
     try {
         const { title, price, discountedPercentage, specificService } = req.body;
-        console.log(req.body)
-        if (!title || !price || !specificService) {
-            return res.status(400).json({ message: "Title, price, and specificService are required" });
+        const imgFile = req.files?.image?.[0];
+
+        // Validate required fields
+        if (!title || !imgFile || !price || !specificService) {
+            return res.status(400).json({
+                message: "Title, image, price, and specificService are required",
+            });
         }
 
-        const existingSpecificService = await SpecificServiceType.findById(specificService);
+        // Check if specificService exists
+        const existingSpecificService = await SpecificService.findById(specificService);
         if (!existingSpecificService) {
             return res.status(404).json({ message: "SpecificService not found" });
         }
 
+        // Prevent duplicate unit titles under same specificService
         const titleExists = await Unit.findOne({ title, specificService });
         if (titleExists) {
-            return res.status(409).json({ message: "Unit already exists under this SpecificService" });
+            return res.status(409).json({
+                message: "Unit already exists under this SpecificService",
+            });
         }
 
+        // Upload image
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) {
+            return res.status(500).json({ message: "Image upload failed" });
+        }
+
+        // Save new unit
         const unit = new Unit({
             title,
             price: Number(price),
             discountedPercentage: Number(discountedPercentage),
-            specificService
+            specificService,
+            image: uploadImage[0],
         });
+
+
         await unit.save();
 
         return res.status(201).json({ message: "Unit added successfully", unit });
     } catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
 
+exports.createHeroSection = async (req, res) => {
+    try {
+        const { title, categoryId } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        if (!title || !imgFile || !categoryId) {
+            return res.status(400).json({ message: "Title, image, and category are required" });
+        }
+
+        // Check if category exists
+        const category = await Category.findById(categoryId);
+        if (!category) {
+            return res.status(404).json({ message: "Category not found" });
+        }
+
+        // Optional: Check if a hero section already exists for this category
+        const existingHero = await HeroSection.findOne({ category: categoryId });
+        if (existingHero) {
+            return res.status(409).json({ message: "Hero section for this category already exists" });
+        }
+
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) {
+            return res.status(500).json({ message: "Image upload failed" });
+        }
+
+        const heroSection = new HeroSection({
+            title,
+            image: uploadImage[0],
+            category: categoryId
+        });
+
+        await heroSection.save();
+
+        return res.status(201).json({ message: "Hero section added successfully", heroSection });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
 
 exports.delServiceType = async (req, res) => {
     try {

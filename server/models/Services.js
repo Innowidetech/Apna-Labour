@@ -60,25 +60,43 @@ const SpecificServiceSchema = new mongoose.Schema({
     title: { type: String, required: true },
     image: { type: String, required: true },
     startingPrice: { type: Number, required: true },
-    serviceType: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType', required: true }
+    serviceType: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType', required: true },
+    totalReviews: { type: Number, default: 0 },
+    averageRating: { type: Number, default: 0 },
 }, { timestamps: true });
 
 const UnitSchema = new mongoose.Schema({
     title: { type: String, required: true }, // e.g., "1 AC", "2 AC", "3 AC"
     price: { type: Number, required: true }, // price for this unit
     discountedPercentage: { type: Number }, // optional discounted price
-    specificService: { type: mongoose.Schema.Types.ObjectId, ref: 'SpecificServiceType', required: true }
+    image: { type: String, required: true },
+    totalReviews: { type: Number, default: 0 },
+    averageRating: { type: Number, default: 0 },
+    specificService: { type: mongoose.Schema.Types.ObjectId, ref: 'SpecificService', required: true }
 }, { timestamps: true });
 
-module.exports = mongoose.model('Unit', UnitSchema);
+const HeroSectionSchema = new mongoose.Schema(
+    {
+        title: { type: String, required: true },
+        image: { type: String, required: true },
+        category: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Category",
+            required: true
+        }
+    },
+    { timestamps: true }
+);
+
 
 module.exports = {
     Category: mongoose.model('Category', CategorySchema),
     SubCategory: mongoose.model('SubCategory', SubCategorySchema),
     AppliancesType: mongoose.model('AppliancesType', AppliancesTypeSchema),
     ServiceType: mongoose.model('ServiceType', ServiceTypeSchema),
-    SpecificServiceType: mongoose.model('SpecificServiceType', SpecificServiceSchema),
-    Unit: mongoose.model('Unit', UnitSchema)
+    SpecificService: mongoose.model('SpecificService', SpecificServiceSchema),
+    Unit: mongoose.model('Unit', UnitSchema),
+    HeroSection: mongoose.model('HeroSection', HeroSectionSchema),
 };
 
 
