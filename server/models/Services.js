@@ -88,6 +88,19 @@ const HeroSectionSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+const HeroApplianceSchema = new mongoose.Schema(
+    {
+        title: { type: String, required: true },
+        image: { type: String, required: true },
+        appliance: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "AppliancesType", // 🔹 Reference to AppliancesType
+            required: true
+        }
+    },
+    { timestamps: true }
+);
+
 
 module.exports = {
     Category: mongoose.model('Category', CategorySchema),
@@ -97,6 +110,7 @@ module.exports = {
     SpecificService: mongoose.model('SpecificService', SpecificServiceSchema),
     Unit: mongoose.model('Unit', UnitSchema),
     HeroSection: mongoose.model('HeroSection', HeroSectionSchema),
+    HeroAppliance: mongoose.model('HeroAppliance', HeroApplianceSchema)
 };
 
 

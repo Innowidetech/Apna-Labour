@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
+const { uuid } = require("uuidv4");
 require("dotenv").config();
 const TrainingDetails = require('../models/TrainingDetails');
 const Cart = require('../models/Cart');
@@ -46,10 +47,110 @@ exports.createOrAddReview = async (req, res) => {
     }
 }
 
+// exports.addToCart = async (req, res) => {
+//     try {
+//         const userId = req.user.id;
+//         const { unitId, quantity } = req.body;
+
+//         if (!unitId) return res.status(400).json({ message: "unitId is required" });
+
+//         const unit = await Unit.findById(unitId);
+//         if (!unit) return res.status(404).json({ message: "Unit not found" });
+
+//         let finalPrice = unit.price;
+//         if (unit.discountedPercentage) {
+//             finalPrice = unit.price - (unit.price * unit.discountedPercentage) / 100;
+//         }
+
+//         let cart = await Cart.findOne({ user: userId });
+
+//         if (!cart) {
+//             cart = new Cart({
+//                 user: userId,
+//                 items: [{ unit: unitId, quantity: quantity || 1, price: finalPrice }],
+//             });
+//         } else {
+//             const itemIndex = cart.items.findIndex(item => item.unit.toString() === unitId);
+//             if (itemIndex > -1) {
+//                 cart.items[itemIndex].quantity += quantity || 1;
+//             } else {
+//                 cart.items.push({ unit: unitId, quantity: quantity || 1, price: finalPrice });
+//             }
+//         }
+
+//         await cart.save();
+//         res.status(200).json({ message: "Item added to cart", cart });
+//     } catch (err) {
+//         res.status(500).json({ message: "Internal server error", error: err.message });
+//     }
+// };
+
+
+// exports.removeFromCart = async (req, res) => {
+//     try {
+//         const userId = req.user.id;
+//         const { unitId } = req.params; // this is the Unit _id
+
+//         const cart = await Cart.findOne({ user: userId });
+//         if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+//         // Compare with item.unit instead of item._id
+//         cart.items = cart.items.filter(
+//             (item) => item.unit.toString() !== unitId
+//         );
+
+//         await cart.save();
+
+//         return res.status(200).json({ message: "Item removed from cart", cart });
+//     } catch (err) {
+//         return res.status(500).json({ message: "Internal server error", error: err.message });
+//     }
+// };
+
+
+
+// exports.getCart = async (req, res) => {
+//     try {
+//         const userId = req.user.id;
+//         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
+
+//         if (!cart || cart.items.length === 0) {
+//             return res.status(200).json({
+//                 message: "Cart is empty",
+//                 items: [],
+//                 totalPrice: 0
+//             });
+//         }
+
+//         // calculate total
+//         const totalPrice = cart.items.reduce((acc, item) => {
+//             return acc + item.price * item.quantity;
+//         }, 0);
+
+//         return res.status(200).json({
+//             message: "Cart fetched successfully",
+//             items: cart.items,
+//             totalPrice,
+//         });
+//     } catch (err) {
+//         return res.status(500).json({ message: "Internal server error", error: err.message });
+//     }
+// };
+
 exports.addToCart = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { unitId, quantity } = req.body;
+        const userId = req.user ? req.user.id : null;
+        let guestId = req.cookies.guestId;
+
+        // Create guestId if not logged in
+        if (!userId && !guestId) {
+            guestId = uuid();
+            res.cookie("guestId", guestId, { httpOnly: true });
+        }
+
+        // Take unitId from params
+        const { unitId } = req.params;
+        const { quantity } = req.body;
 
         if (!unitId) return res.status(400).json({ message: "unitId is required" });
 
@@ -61,11 +162,13 @@ exports.addToCart = async (req, res) => {
             finalPrice = unit.price - (unit.price * unit.discountedPercentage) / 100;
         }
 
-        let cart = await Cart.findOne({ user: userId });
+        const query = userId ? { user: userId } : { guestId };
+        let cart = await Cart.findOne(query);
 
         if (!cart) {
             cart = new Cart({
-                user: userId,
+                user: userId || undefined,
+                guestId: userId ? undefined : guestId,
                 items: [{ unit: unitId, quantity: quantity || 1, price: finalPrice }],
             });
         } else {
@@ -84,20 +187,17 @@ exports.addToCart = async (req, res) => {
     }
 };
 
-
 exports.removeFromCart = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { unitId } = req.params; // this is the Unit _id
+        const userId = req.user ? req.user.id : null;
+        const guestId = req.cookies.guestId;
+        const { unitId } = req.params;
 
-        const cart = await Cart.findOne({ user: userId });
+        const query = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(query);
         if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-        // Compare with item.unit instead of item._id
-        cart.items = cart.items.filter(
-            (item) => item.unit.toString() !== unitId
-        );
-
+        cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
         await cart.save();
 
         return res.status(200).json({ message: "Item removed from cart", cart });
@@ -106,25 +206,23 @@ exports.removeFromCart = async (req, res) => {
     }
 };
 
-
-
 exports.getCart = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const cart = await Cart.findOne({ user: userId }).populate("items.unit");
+        const userId = req.user ? req.user.id : null;
+        const guestId = req.cookies.guestId;
+
+        const query = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(query).populate("items.unit");
 
         if (!cart || cart.items.length === 0) {
             return res.status(200).json({
                 message: "Cart is empty",
                 items: [],
-                totalPrice: 0
+                totalPrice: 0,
             });
         }
 
-        // calculate total
-        const totalPrice = cart.items.reduce((acc, item) => {
-            return acc + item.price * item.quantity;
-        }, 0);
+        const totalPrice = cart.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
         return res.status(200).json({
             message: "Cart fetched successfully",
@@ -392,7 +490,6 @@ exports.updateUserStatus = async (req, res) => {
 exports.getCategories = async (req, res) => {
     try {
         const categories = await Category.find().sort({ createdAt: -1 });
-        console.log("Categories fetched:", categories);
         return res.status(200).json(categories);
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });

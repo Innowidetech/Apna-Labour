@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 const User = require('./models/User');
+const cookieParser = require("cookie-parser");
 const authRouter = require('./routes/auth.route');
 const adminRouter = require('./routes/admin.route');
 const labourerRouter = require('./routes/labourer.route');
@@ -11,6 +12,7 @@ const userRouter = require('./routes/user.router');
 const landingPageRouter = require('./routes/landingPages.route');
 
 const app = express();
+app.use(cookieParser());
 
 app.use(cors());
 app.use(express.json());

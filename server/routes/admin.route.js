@@ -3,7 +3,8 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrainingDetailsAndLabourers, setTrainingCompleted,
     createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
-    delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection
+    delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
+    createHeroAppliance
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -27,6 +28,7 @@ router.post("/units", protect, authorize("Admin"), upload.fields([{ name: "image
 
 
 router.post('/hero', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createHeroSection);
+router.post("/hero-appliance", protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), createHeroAppliance);
 
 router.post('/notifications', protect, authorize('Admin'), createNotificationForAll);
 

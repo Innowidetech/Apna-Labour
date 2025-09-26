@@ -550,3 +550,56 @@ exports.getContacts = async (req, res) => {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+
+exports.createHeroAppliance = async (req, res) => {
+    try {
+        const { title, applianceId } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        if (!title || !imgFile || !applianceId) {
+            return res
+                .status(400)
+                .json({ message: "Title, image, and appliance are required" });
+        }
+
+        // ✅ Check if appliance exists
+        const appliance = await AppliancesType.findById(applianceId);
+        if (!appliance) {
+            return res.status(404).json({ message: "Appliance not found" });
+        }
+
+        // ✅ Check if hero section already exists for this appliance
+        const existingHero = await HeroAppliance.findOne({ appliance: applianceId });
+        if (existingHero) {
+            return res
+                .status(409)
+                .json({ message: "Hero section for this appliance already exists" });
+        }
+
+        // ✅ Upload image
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) {
+            return res.status(500).json({ message: "Image upload failed" });
+        }
+
+        // ✅ Save new hero appliance
+        const heroAppliance = new HeroAppliance({
+            title,
+            image: uploadImage[0],
+            appliance: applianceId,
+        });
+
+        await heroAppliance.save();
+
+        return res.status(201).json({
+            message: "Hero appliance section added successfully",
+            heroAppliance,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
+    }
+};
+

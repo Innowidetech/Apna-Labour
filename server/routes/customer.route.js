@@ -10,9 +10,12 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
 
 const router = express.Router();
 
-router.post('/cart', protect, addToCart);
-router.delete('/cart/remove/:unitId', protect, removeFromCart);
-router.get('/cart', protect, getCart);
+// router.post('/cart', protect, addToCart);
+// router.delete('/cart/remove/:id', protect, removeFromCart);
+// router.get('/cart', protect, getCart);
+router.post("/cart/:unitId", addToCart);
+router.delete("/cart/remove/:unitId", removeFromCart);
+router.get("/cart", getCart);
 router.post('/book-service', protect, authorize('Customer'), bookService);
 router.post('/book-labourer', protect, authorize('Customer'), bookLabourer);
 router.get('/search-services', protect, authorize('Customer'), searchServices);
