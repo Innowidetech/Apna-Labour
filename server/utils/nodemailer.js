@@ -9,10 +9,15 @@ const transporter = nodemailer.createTransport({
 });
 
 exports.sendEmail = async (to, subject, htmlContent) => {
-    await transporter.sendMail({
-        from: process.env.EMAIL_ID,
-        to,
-        subject,
-        html: htmlContent
-    })
+    try {
+        await transporter.sendMail({
+            from: process.env.EMAIL_ID,
+            to,
+            subject,
+            html: htmlContent,
+        });
+    } catch (err) {
+        console.error("Email sending failed:", err);
+        // Optionally, log this to your database or monitoring system
+    }
 };
