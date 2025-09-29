@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
-const { uuid } = require("uuidv4");
+const { v4: uuid } = require("uuid");
 require("dotenv").config();
 const TrainingDetails = require('../models/TrainingDetails');
 const Cart = require('../models/Cart');
@@ -145,7 +145,10 @@ exports.addToCart = async (req, res) => {
         // Create guestId if not logged in
         if (!userId && !guestId) {
             guestId = uuid();
-            res.cookie("guestId", guestId, { httpOnly: true });
+            res.cookie("guestId", guestId, {
+                httpOnly: true,
+                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // expires after 7 days
+            });
         }
 
         // Take unitId from params
@@ -222,11 +225,26 @@ exports.getCart = async (req, res) => {
             });
         }
 
-        const totalPrice = cart.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
+        // Recalculate price dynamically
+        let totalPrice = 0;
+        const items = cart.items.map(item => {
+            let finalPrice = item.unit.price;
+            if (item.unit.discountedPercentage) {
+                finalPrice -= (item.unit.price * item.unit.discountedPercentage) / 100;
+            }
+            totalPrice += finalPrice * item.quantity;
+
+            return {
+                unit: item.unit,
+                quantity: item.quantity,
+                price: finalPrice,
+                total: finalPrice * item.quantity
+            };
+        });
 
         return res.status(200).json({
             message: "Cart fetched successfully",
-            items: cart.items,
+            items,
             totalPrice,
         });
     } catch (err) {
@@ -955,6 +973,60 @@ exports.getUnitReviews = async (req, res) => {
         });
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+
+exports.getSpecificServiceDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const specService = await SpecificService.findById(id);
+        if (!specService)
+            return res.status(404).json({ message: "SpecificService not found" });
+
+        // Get all units under this specificService
+        const units = await Unit.find({ specificService: specService._id }).select("_id");
+        const unitIds = units.map(u => u._id);
+
+        // Get all reviews for these units and populate user name
+        const reviews = await Review.find({
+            targetId: { $in: unitIds },
+            targetType: "Unit",
+        }).populate("userId", "name email"); // populate name + email
+
+        // Count reviews by star
+        const starCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        reviews.forEach(r => {
+            if (r.rating >= 1 && r.rating <= 5) starCounts[r.rating]++;
+        });
+
+        const totalReviews = reviews.length;
+        const averageRating =
+            totalReviews > 0
+                ? reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews
+                : 0;
+
+        return res.status(200).json({
+            ...specService.toObject(),
+            totalReviews,
+            averageRating: Number(averageRating.toFixed(1)),
+            starCounts,
+            reviews: reviews.map(r => ({
+                id: r._id,
+                user: r.userId ? (r.userId.name || r.userId.email) : "Anonymous",
+                rating: r.rating,
+                comment: r.feedback,
+                date: r.date || r.createdAt
+            }))
+        });
+
+    } catch (err) {
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message
+        });
     }
 };
 
