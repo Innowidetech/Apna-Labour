@@ -147,11 +147,12 @@ exports.addToCart = async (req, res) => {
             guestId = uuid();
             res.cookie("guestId", guestId, {
                 httpOnly: true,
-                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // expires after 7 days
+                secure: process.env.NODE_ENV === "production" ? true : false, // true on HTTPS production
+                sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
             });
         }
 
-        // Take unitId from params
         const { unitId } = req.params;
         const { quantity } = req.body;
 
@@ -225,7 +226,6 @@ exports.getCart = async (req, res) => {
             });
         }
 
-        // Recalculate price dynamically
         let totalPrice = 0;
         const items = cart.items.map(item => {
             let finalPrice = item.unit.price;
