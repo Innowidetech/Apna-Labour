@@ -147,8 +147,8 @@ exports.addToCart = async (req, res) => {
             guestId = uuid();
             res.cookie("guestId", guestId, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === "production" ? true : false, // true on HTTPS production
-                sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+                secure: process.env.NODE_ENV === "production" ? true : false,
+                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // lowercase
                 expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
             });
         }
