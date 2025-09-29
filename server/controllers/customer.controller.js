@@ -253,7 +253,8 @@ exports.getCart = async (req, res) => {
         }
 
         const query = userId ? { user: userId } : { guestId };
-        const cart = await Cart.findOne(query).populate("items.unit");
+        // Try to populate, but only select required fields
+        const cart = await Cart.findOne(query).populate("items.unit", "title image");
 
         if (!cart || cart.items.length === 0) {
             return res.status(200).json({
@@ -265,17 +266,17 @@ exports.getCart = async (req, res) => {
 
         let totalPrice = 0;
         const items = cart.items.map(item => {
-            let finalPrice = item.unit.price;
-            if (item.unit.discountedPercentage) {
-                finalPrice -= (item.unit.price * item.unit.discountedPercentage) / 100;
-            }
-            totalPrice += finalPrice * item.quantity;
+            const unitDoc = item.unit && item.unit.title ? item.unit : null; // populated unit OR null
+            const price = item.price || 0; // always trust stored price
+            totalPrice += price * item.quantity;
 
             return {
-                unit: item.unit,
+                unit: unitDoc
+                    ? { id: unitDoc._id, title: unitDoc.title, image: unitDoc.image }
+                    : { id: item.unit, title: "Unknown / Deleted Item" }, // fallback
                 quantity: item.quantity,
-                price: finalPrice,
-                total: finalPrice * item.quantity
+                price,
+                total: price * item.quantity
             };
         });
 
