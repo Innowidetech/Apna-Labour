@@ -140,21 +140,11 @@ exports.createOrAddReview = async (req, res) => {
 exports.addToCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.id : null;
-        let guestId = req.cookies.guestId;
-
-        // Determine if cookie should be secure
-        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-        const isSecureCookie = frontendUrl.startsWith("https");
+        let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
 
         // Create guestId if not logged in
         if (!userId && !guestId) {
-            guestId = uuid();
-            res.cookie("guestId", guestId, {
-                httpOnly: true,
-                secure: isSecureCookie,               // true only for HTTPS frontend
-                sameSite: isSecureCookie ? "None" : "Lax",
-                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-            });
+            guestId = uuid(); // generate new only once
         }
 
         const { unitId } = req.params;
@@ -215,7 +205,13 @@ exports.addToCart = async (req, res) => {
         }
 
         await cart.save();
-        return res.status(200).json({ message: "Item added to cart", cart });
+
+        return res.status(200).json({
+            message: "Item added to cart",
+            cart,
+            guestId: guestId || undefined, // 👈 return guestId only if guest
+        });
+
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
@@ -224,7 +220,7 @@ exports.addToCart = async (req, res) => {
 exports.getCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.id : null;
-        let guestId = req.cookies.guestId;
+        let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
         // Merge guest cart into user cart if logged in
         if (userId && guestId) {
@@ -238,7 +234,9 @@ exports.getCart = async (req, res) => {
                     guestId = undefined;
                 } else {
                     for (const item of guestCart.items) {
-                        const index = userCart.items.findIndex(i => i.unit.toString() === item.unit.toString());
+                        const index = userCart.items.findIndex(
+                            i => i.unit.toString() === item.unit.toString()
+                        );
                         if (index > -1) {
                             userCart.items[index].quantity += item.quantity;
                         } else {
@@ -253,7 +251,6 @@ exports.getCart = async (req, res) => {
         }
 
         const query = userId ? { user: userId } : { guestId };
-        // Try to populate, but only select required fields
         const cart = await Cart.findOne(query).populate("items.unit", "title image");
 
         if (!cart || cart.items.length === 0) {
@@ -273,7 +270,7 @@ exports.getCart = async (req, res) => {
             return {
                 unit: unitDoc
                     ? { id: unitDoc._id, title: unitDoc.title, image: unitDoc.image }
-                    : { id: item.unit, title: "Unknown / Deleted Item" }, // fallback
+                    : { id: item.unit, title: "Unknown / Deleted Item" },
                 quantity: item.quantity,
                 price,
                 total: price * item.quantity
@@ -286,7 +283,10 @@ exports.getCart = async (req, res) => {
             totalPrice,
         });
     } catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
