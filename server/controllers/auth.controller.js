@@ -12,63 +12,50 @@ const otpTemplate = require('../utils/otpTemplate');
 
 
 
-exports.googleLogin = async (req, res) => {
+exports.registerOrLogin = async (req, res) => {
     try {
-        const { idToken } = req.body;
-        if (!idToken) return res.status(400).json({ message: "idToken is required" });
-
-        // Verify Google token
-        const ticket = await client.verifyIdToken({
-            idToken,
-            audience: process.env.GOOGLE_CLIENT_ID,
-        });
-        const payload = ticket.getPayload();
-        const { sub: googleId, email } = payload;
-
-        // Find or create user
-        let user = await User.findOne({ $or: [{ googleId }, { email }] });
-        if (!user) {
-            user = new User({
-                email,
-                googleId,
-                role: "Customer",
-                isActive: true,
-            });
-            await user.save();
-        }
-
-        // Generate JWT
-        const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
-
-        return res.status(200).json({
-            message: "Google login successful",
-            token,
-            user,
-        });
-
-    } catch (err) {
-        console.error("Google login error:", err);
-        res.status(500).json({ message: "Internal server error", error: err.message });
-    }
-};
-
-exports.otpLogin = async (req, res) => {
-    try {
-        const { mobileNumber, email } = req.body;
-
-        if (!mobileNumber && !email) {
-            return res.status(400).json({ message: "Provide mobileNumber or email" });
-        }
+        const { email, mobileNumber, idToken } = req.body;
 
         let user;
 
-        // 🔹 Mobile OTP
+        // 🔹 Case 1: Google Login
+        if (idToken) {
+            const ticket = await client.verifyIdToken({
+                idToken,
+                audience: process.env.GOOGLE_CLIENT_ID,
+            });
+            const payload = ticket.getPayload();
+            const { sub: googleId, email } = payload;
+
+            user = await User.findOne({ $or: [{ googleId }, { email }] });
+
+            if (!user) {
+                user = new User({
+                    email,
+                    googleId,
+                    role: "Customer",
+                    isActive: true,
+                });
+                await user.save();
+            }
+
+            const token = jwt.sign(
+                { userId: user._id, email: user.email, role: user.role },
+                process.env.JWT_SECRET,
+                { expiresIn: "7d" }
+            );
+
+            return res.status(200).json({
+                message: "Google login successful",
+                token,
+                user,
+            });
+        }
+
+        // 🔹 Case 2: Mobile Number (OTP flow)
         if (mobileNumber) {
             user = await User.findOne({ mobileNumber });
+
             if (!user) {
                 user = new User({
                     mobileNumber,
@@ -79,11 +66,12 @@ exports.otpLogin = async (req, res) => {
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            user.otp = otp;
-            user.otpExpiry = new Date(Date.now() + 1 * 60 * 1000); // 1 min
-            await user.save();
+            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
 
-            const message = `Your OTP code is ${otp}. It will expire in 1 minute.`;
+            user.otp = otp;
+            user.otpExpiry = expiryTime;
+            await user.save();
+            const message = `Your OTP code is ${otp}. It will expire in 5 minutes.`;
             await sendOtpToMobile(mobileNumber, message);
 
             return res.status(200).json({
@@ -92,9 +80,10 @@ exports.otpLogin = async (req, res) => {
             });
         }
 
-        // 🔹 Email OTP
+        // 🔹 Case 3: Email (OTP flow)
         if (email) {
             user = await User.findOne({ email });
+
             if (!user) {
                 user = new User({
                     email,
@@ -105,11 +94,13 @@ exports.otpLogin = async (req, res) => {
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
+
             user.otp = otp;
-            user.otpExpiry = new Date(Date.now() + 1 * 60 * 1000); // 1 min
+            user.otpExpiry = expiryTime;
             await user.save();
 
-            await sendEmail(email, 'Apna Labour - OTP', otpTemplate(otp));
+            await sendEmail(email, 'Apna Labour -  OTP', otpTemplate(otp));
 
             return res.status(200).json({
                 message: "OTP sent to email",
@@ -117,12 +108,12 @@ exports.otpLogin = async (req, res) => {
             });
         }
 
+        return res.status(400).json({ message: "Provide mobileNumber, email, or idToken" });
     } catch (err) {
-        console.error("OTP login error:", err);
+        console.error("Auth error:", err);
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
-
 // controllers/authController.js
 exports.verifyOtp = async (req, res) => {
     try {

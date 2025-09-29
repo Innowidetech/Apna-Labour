@@ -142,14 +142,18 @@ exports.addToCart = async (req, res) => {
         const userId = req.user ? req.user.id : null;
         let guestId = req.cookies.guestId;
 
+        // Determine if cookie should be secure
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        const isSecureCookie = frontendUrl.startsWith("https");
+
         // Create guestId if not logged in
         if (!userId && !guestId) {
             guestId = uuid();
             res.cookie("guestId", guestId, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === "production" ? true : false,
-                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // lowercase
-                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+                secure: isSecureCookie,               // true only for HTTPS frontend
+                sameSite: isSecureCookie ? "None" : "Lax",
+                expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
             });
         }
 
@@ -163,7 +167,33 @@ exports.addToCart = async (req, res) => {
 
         let finalPrice = unit.price;
         if (unit.discountedPercentage) {
-            finalPrice = unit.price - (unit.price * unit.discountedPercentage) / 100;
+            finalPrice -= (unit.price * unit.discountedPercentage) / 100;
+        }
+
+        // Guest → User cart merge
+        if (userId && guestId) {
+            const guestCart = await Cart.findOne({ guestId });
+            if (guestCart) {
+                let userCart = await Cart.findOne({ user: userId });
+                if (!userCart) {
+                    guestCart.user = userId;
+                    guestCart.guestId = undefined;
+                    await guestCart.save();
+                } else {
+                    // Merge items
+                    for (const item of guestCart.items) {
+                        const index = userCart.items.findIndex(i => i.unit.toString() === item.unit.toString());
+                        if (index > -1) {
+                            userCart.items[index].quantity += item.quantity;
+                        } else {
+                            userCart.items.push(item);
+                        }
+                    }
+                    await userCart.save();
+                    await guestCart.remove();
+                }
+            }
+            guestId = undefined;
         }
 
         const query = userId ? { user: userId } : { guestId };
@@ -185,26 +215,7 @@ exports.addToCart = async (req, res) => {
         }
 
         await cart.save();
-        res.status(200).json({ message: "Item added to cart", cart });
-    } catch (err) {
-        res.status(500).json({ message: "Internal server error", error: err.message });
-    }
-};
-
-exports.removeFromCart = async (req, res) => {
-    try {
-        const userId = req.user ? req.user.id : null;
-        const guestId = req.cookies.guestId;
-        const { unitId } = req.params;
-
-        const query = userId ? { user: userId } : { guestId };
-        const cart = await Cart.findOne(query);
-        if (!cart) return res.status(404).json({ message: "Cart not found" });
-
-        cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
-        await cart.save();
-
-        return res.status(200).json({ message: "Item removed from cart", cart });
+        return res.status(200).json({ message: "Item added to cart", cart });
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
@@ -213,7 +224,33 @@ exports.removeFromCart = async (req, res) => {
 exports.getCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.id : null;
-        const guestId = req.cookies.guestId;
+        let guestId = req.cookies.guestId;
+
+        // Merge guest cart into user cart if logged in
+        if (userId && guestId) {
+            const guestCart = await Cart.findOne({ guestId });
+            if (guestCart) {
+                let userCart = await Cart.findOne({ user: userId });
+                if (!userCart) {
+                    guestCart.user = userId;
+                    guestCart.guestId = undefined;
+                    await guestCart.save();
+                    guestId = undefined;
+                } else {
+                    for (const item of guestCart.items) {
+                        const index = userCart.items.findIndex(i => i.unit.toString() === item.unit.toString());
+                        if (index > -1) {
+                            userCart.items[index].quantity += item.quantity;
+                        } else {
+                            userCart.items.push(item);
+                        }
+                    }
+                    await userCart.save();
+                    await guestCart.remove();
+                    guestId = undefined;
+                }
+            }
+        }
 
         const query = userId ? { user: userId } : { guestId };
         const cart = await Cart.findOne(query).populate("items.unit");
@@ -247,6 +284,26 @@ exports.getCart = async (req, res) => {
             items,
             totalPrice,
         });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+
+exports.removeFromCart = async (req, res) => {
+    try {
+        const userId = req.user ? req.user.id : null;
+        const guestId = req.cookies.guestId;
+        const { unitId } = req.params;
+
+        const query = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(query);
+        if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+        cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
+        await cart.save();
+
+        return res.status(200).json({ message: "Item removed from cart", cart });
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
