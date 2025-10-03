@@ -11,143 +11,180 @@ const { sendEmail } = require('../utils/nodemailer');
 const otpTemplate = require('../utils/otpTemplate');
 
 
-exports.register = async (req, res) => {
+
+exports.registerOrLogin = async (req, res) => {
     try {
-        const { name, email, password, mobileNumber } = req.body;
+        const { email, mobileNumber, idToken } = req.body;
 
+        let user;
 
-        if (!name || !email || !password || !mobileNumber) {
-            return res.status(400).json({ message: "All fields are required." });
-        }
+        // 🔹 Case 1: Google Login
+        if (idToken) {
+            const ticket = await client.verifyIdToken({
+                idToken,
+                audience: process.env.GOOGLE_CLIENT_ID,
+            });
+            const payload = ticket.getPayload();
+            const { sub: googleId, email } = payload;
 
+            user = await User.findOne({ $or: [{ googleId }, { email }] });
 
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ message: "Email already registered." });
-        }
+            if (!user) {
+                user = new User({
+                    email,
+                    googleId,
+                    role: "Customer",
+                    isActive: true,
+                });
+                await user.save();
+            }
 
+            const token = jwt.sign(
+                { userId: user._id, email: user.email, role: user.role },
+                process.env.JWT_SECRET
+            );
 
-        const hashedPassword = bcrypt.hashSync(password, 10);
-
-        const user = new User({
-            name,
-            email,
-            password: hashedPassword,
-            mobileNumber,
-            role: "Customer",
-        });
-
-        await user.save();
-
-        res.status(201).json({
-            message: "Registration successful.",
-            user,
-        });
-    } catch (err) {
-        console.error("Register error:", err);
-        return res.status(500).json({ message: "Internal server error", error: err.message });
-    }
-};
-
-
-exports.login = async (req, res) => {
-    try {
-        const { email, password, mobileNumber, idToken } = req.body;
-        if (!(email && password) && !mobileNumber && !idToken) {
-            return res.status(400).json({
-                message: "Provide (email and password) or mobileNumber or click on google to login"
+            return res.status(200).json({
+                message: "Google login successful",
+                token,
+                user,
             });
         }
 
-        let token, user;
-
-        if (idToken) {
-            const ticket = await client.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
-            const payload = ticket.getPayload();
-            const { sub: googleId, email, name } = payload;
-
-            if (!email || !googleId || !name) {
-                return res.status(400).json({ message: "Invalid Google token payload" });
-            }
-
-            user = await User.findOne({ $or: [{ googleId }, { email }] });
-            if (!user) {
-                return res.status(404).json({ message: "No user found linked to this Google account" });
-            }
-
-            token = jwt.sign({ userId: user._id, email, mobileNumber: user.mobileNumber, role: user.role }, process.env.JWT_SECRET);
-
-        }
-        else if (email && password) {
-            user = await User.findOne({ email });
-            if (!user) {
-                return res.status(404).json({ message: "No user found with this email" });
-            }
-
-            const isMatch = bcrypt.compareSync(password, user.password);
-            if (!isMatch) {
-                return res.status(401).json({ message: "Invalid password" });
-            }
-
-            token = jwt.sign({ userId: user._id, email, mobileNumber: user.mobileNumber, role: user.role }, process.env.JWT_SECRET);
-
-        }
-        else if (mobileNumber) {
+        // 🔹 Case 2: Mobile Number (OTP flow)
+        if (mobileNumber) {
             user = await User.findOne({ mobileNumber });
-            if (!user) {
-                return res.status(404).json({ message: "No user found with this mobile number" });
-            }
 
-            if (user.role === 'Labourer' && user.isActive != true) {
-                return res.status(409).json({ message: "Registration request not yet approved" })
+            if (!user) {
+                user = new User({
+                    mobileNumber,
+                    role: "Customer",
+                    isActive: true,
+                });
+                await user.save();
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
-            let message = `Your OTP for Apna Labour login is ${otp}`;
 
             user.otp = otp;
             user.otpExpiry = expiryTime;
             await user.save();
-            sendOtpToMobile(mobileNumber, message);
+            const message = `Your OTP code is ${otp}. It will expire in 5 minutes.`;
+            await sendOtpToMobile(mobileNumber, message);
+
+            return res.status(200).json({
+                message: "OTP sent to mobile number",
+                userId: user._id,
+            });
         }
 
-        if (user.role === 'Labourer' && user.isActive != true) {
-            return res.status(409).json({ message: "Registration request not yet approved" })
+        // 🔹 Case 3: Email (OTP flow)
+        if (email) {
+            user = await User.findOne({ email });
+
+            if (!user) {
+                user = new User({
+                    email,
+                    role: "Customer",
+                    isActive: true,
+                });
+                await user.save();
+            }
+
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
+
+            user.otp = otp;
+            user.otpExpiry = expiryTime;
+            await user.save();
+
+            await sendEmail(email, 'Apna Labour -  OTP', otpTemplate(otp));
+
+            return res.status(200).json({
+                message: "OTP sent to email",
+                userId: user._id,
+            });
         }
-        const responseMessage = mobileNumber ? 'OTP has been sent to your mobile number (valid for 5 minutes)' : 'Login success'
-        return res.status(200).json({ message: responseMessage, token });
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
+
+        return res.status(400).json({ message: "Provide mobileNumber, email, or idToken" });
+    } catch (err) {
+        console.error("Auth error:", err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
-
-
+// controllers/authController.js
 exports.verifyOtp = async (req, res) => {
     try {
-        const { mobileNumber, otp } = req.body;
-        if (!mobileNumber || !otp) {
-            return res.status(400).json({ message: "Provide mobileNumber and otp to login" })
-        }
-        const user = await User.findOne({ mobileNumber });
-        if (!user) { return res.status(404).json({ message: "No user found with the provided mobileNumber" }) }
+        const { userId, otp } = req.body;
 
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Check if OTP is expired
+        if (!user.otp || !user.otpExpiry || user.otpExpiry < new Date()) {
+            user.otp = null;
+            user.otpExpiry = null;
+            await user.save();
+            return res.status(400).json({ message: "OTP expired" });
+        }
+
+        // Check if OTP matches
         if (user.otp !== otp) {
-            return res.status(401).json({ message: "Invalid otp" })
+            return res.status(400).json({ message: "Invalid OTP" });
         }
-        user.otp = undefined;
-        user.otpExpiry = undefined
-        user.save()
 
-        token = jwt.sign({ userId: user._id, email: user.email, mobileNumber, role: user.role }, process.env.JWT_SECRET);
+        // ✅ OTP is correct → clear it after successful login
+        user.otp = null;
+        user.otpExpiry = null;
+        await user.save();
 
-        res.status(200).json({ message: 'Login success', token })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message })
+        const token = jwt.sign(
+            { userId: user._id, email: user.email, role: user.role },
+            process.env.JWT_SECRET
+        );
+
+        return res.status(200).json({ message: "OTP verified", token, user });
+    } catch (err) {
+        res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+
+exports.resendOtp = async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Generate new OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiryTime = new Date(Date.now() + 1 * 60 * 1000); // valid for 1 minute
+
+        user.otp = otp;
+        user.otpExpiry = expiryTime;
+        await user.save();
+
+        if (user.mobileNumber) {
+            const message = `Your OTP code is ${otp}. It will expire in 1 minutes.`;
+            await sendOtpToMobile(user.mobileNumber, message);
+        } else if (user.email) {
+            await sendEmail(user.email, 'Apna Labour - OTP', otpTemplate(otp));
+        } else {
+            return res.status(400).json({ message: "No email or mobile linked to this account" });
+        }
+
+        return res.status(200).json({
+            message: "OTP resent successfully",
+            userId: user._id
+        });
+
+    } catch (err) {
+        console.error("Resend OTP error:", err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
 
 
 exports.logout = async (req, res) => {
@@ -162,51 +199,27 @@ exports.logout = async (req, res) => {
 };
 
 
-exports.forgotPassword = async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (!email) { return res.status(400).json({ message: "Please provide the email" }) }
+// exports.forgotPassword = async (req, res) => {
+//     try {
+//         const { email } = req.body;
+//         if (!email) { return res.status(400).json({ message: "Please provide the email" }) }
 
-        const user = await User.findOne({ email });
-        if (!user) { return res.status(404).json({ message: "No user found with the email, please provide a valid email" }) }
+//         const user = await User.findOne({ email });
+//         if (!user) { return res.status(404).json({ message: "No user found with the email, please provide a valid email" }) }
 
-        const otp = Math.floor(100000 + Math.random() * 999999).toString();
-        const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
+//         const otp = Math.floor(100000 + Math.random() * 999999).toString();
+//         const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
 
-        user.otp = otp;
-        user.otpExpiry = expiryTime
-        user.save()
+//         user.otp = otp;
+//         user.otpExpiry = expiryTime
+//         user.save()
 
-        await sendEmail(email, 'Apna Labour - Password Reset OTP', otpTemplate(otp));
+//         await sendEmail(email, 'Apna Labour - Password Reset OTP', otpTemplate(otp));
 
-        res.status(200).json({ message: "OTP has been sent to your email (valid for 5 minutes)" })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.status })
-    }
-};
+//         res.status(200).json({ message: "OTP has been sent to your email (valid for 5 minutes)" })
+//     }
+//     catch (err) {
+//         return res.status(500).json({ message: "Internal server error", error: err.status })
+//     }
+// };
 
-
-exports.resetPassword = async (req, res) => {
-    try {
-        const { email, otp, password } = req.body;
-        if (!email || !otp || !password) { return res.status(400).json({ message: "Please provide all the details to reset password" }) }
-
-        const user = await User.findOne({ email });
-        if (!user) { return res.status(404).json({ message: "Invalid email" }) }
-
-        if (otp != user.otp) { return res.status(400).json({ message: 'Invalid otp' }) }
-
-        const hpass = bcrypt.hashSync(password, 10);
-
-        user.password = hpass;
-        user.otp = undefined;
-        user.otpExpiry = undefined
-        user.save()
-
-        res.status(200).json({ message: "Password reset successfully" })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.status })
-    }
-};                                        

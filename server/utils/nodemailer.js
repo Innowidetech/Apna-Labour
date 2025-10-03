@@ -1,7 +1,9 @@
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_ID,
         pass: process.env.EMAIL_PASSKEY,
@@ -9,10 +11,15 @@ const transporter = nodemailer.createTransport({
 });
 
 exports.sendEmail = async (to, subject, htmlContent) => {
-    await transporter.sendMail({
-        from: process.env.EMAIL_ID,
-        to,
-        subject,
-        html: htmlContent
-    })
+    try {
+        await transporter.sendMail({
+            from: process.env.EMAIL_ID,
+            to,
+            subject,
+            html: htmlContent,
+        });
+    } catch (err) {
+        console.error("Email sending failed:", err);
+        // Optionally, log this to your database or monitoring system
+    }
 };

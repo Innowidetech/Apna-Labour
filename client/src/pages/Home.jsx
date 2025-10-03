@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { Search, ChevronRight, Star, Users, UserCog } from "lucide-react";
 import heroBg from "../assets/heroBg.png";
+
+
+
 import { Swiper, SwiperSlide } from "swiper/react";
 import "swiper/css";
 import "swiper/css/navigation";
 import { Navigation } from "swiper/modules";
 import { FaFacebookF, FaInstagram, FaWhatsapp, FaLinkedinIn, FaEnvelope } from "react-icons/fa";
 import { Link } from "react-router-dom";
-
 // Demo service images (replace with your real assets)
 import service1 from "../assets/service1.png";
 import service2 from "../assets/service2.png";
 import service3 from "../assets/service3.png";
+
 
 // New section service images (replace with actual assets)
 
@@ -52,6 +55,7 @@ import installation3 from "../assets/installation3.png";
 import installation4 from "../assets/installation4.png";
 import trust from "../assets/trust.png";
 import contact from "../assets/contact.png";
+
 const Home = () => {
   const [allServices, setAllServices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +65,7 @@ const Home = () => {
     { img: service2, title: "Plumbing" },
     { img: service3, title: "Electrical" },
   ];
+
 
   useEffect(() => {
     const fetchServices = async () => {
@@ -83,6 +88,20 @@ const Home = () => {
     };
     fetchServices();
   }, []);
+
+
+  // const allServices = [
+  //   { img: appliance, title: "Appliance Repair", path: "/appliance-repair" },
+
+  //   { img: pest, title: "Cleaning & Pest Control", path: "/cleaning-pest" },
+  //   { img: electrician, title: "Electrician", path: "/electrician" },
+  //   { img: plumber, title: "Plumber & Carpenter", path: "/plumber-carpenter" },
+  //   { img: painting, title: "Painting & Waterproofing", path: "/painting-waterproofing" },
+  //   { img: womenSalon, title: "Women Salon", path: "/women-salon" },
+  //   { img: menSalon, title: "Men Salon", path: "/men-salon" },
+  //   { img: casuallabarer, title: "Casual Labourer", path: "/casual-labourer" },
+  // ];
+
 
 const slugify = (text) =>
     text
@@ -201,7 +220,10 @@ const slugify = (text) =>
             <span className="font-medium">4.8 Service Rating</span>
           </div>
 
+
+
           {/* Divider */}
+
           <span className="hidden sm:block mx-4 text-gray-300">|</span>
 
           {/* Customers */}
@@ -209,7 +231,6 @@ const slugify = (text) =>
             <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             <span className="font-medium">1M+ Customers</span>
           </div>
-
           {/* Divider */}
           <span className="hidden sm:block mx-4 text-gray-300">|</span>
 
@@ -220,6 +241,7 @@ const slugify = (text) =>
           </div>
         </div>
       </section>
+
 
       {/* Complete Services Section */}
       <section className="bg-blue-50 mt-10 py-10 px-6 md:px-12">
@@ -886,6 +908,7 @@ const slugify = (text) =>
           </div>
         </div>
       </section>
+
 
     </div>
   );
