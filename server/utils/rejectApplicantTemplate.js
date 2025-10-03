@@ -1,4 +1,4 @@
-const otpTemplate = (otp) => `
+const rejectApplicantTemplate = (name) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,7 +20,7 @@ const otpTemplate = (otp) => `
       overflow: hidden;
     }
     .email-header {
-      background-color: #ff9f1c;
+      background-color: #dc3545;
       color: #ffffff;
       text-align: center;
       padding: 20px;
@@ -29,17 +29,17 @@ const otpTemplate = (otp) => `
       padding: 20px;
       color: #333333;
     }
-    .otp-box {
+    .highlight-box {
       margin: 20px auto;
-      background-color: #f4f4f4;
-      border: 1px dashed #ff9f1c;
+      background-color: #fdecea;
+      border: 1px dashed #dc3545;
       padding: 15px;
       text-align: center;
-      font-size: 20px;
+      font-size: 18px;
       font-weight: bold;
-      color: #ff9f1c;
+      color: #dc3545;
       border-radius: 4px;
-      max-width: 300px;
+      max-width: 400px;
     }
     .email-footer {
       text-align: center;
@@ -47,31 +47,18 @@ const otpTemplate = (otp) => `
       color: #888888;
       font-size: 12px;
     }
-    .cta-button {
-      display: inline-block;
-      margin: 20px auto;
-      padding: 10px 20px;
-      background-color: #ff9f1c;
-      color: #ffffff;
-      text-decoration: none;
-      border-radius: 4px;
-      font-size: 16px;
-      font-weight: bold;
-    }
-    .cta-button:hover {
-      background-color: #ff9f1c;
-    }
   </style>
 </head>
 <body>
   <div class="email-container">
     <div class="email-header">
-      <h1>Apna Labour Login OTP</h1>
+      <h1>Application Update</h1>
     </div>
     <div class="email-body">
-      <p>Hello,</p>
-      <p> Apna Labour Login. The OTP is valid only for 1 minutes.</p>
-      <div class="otp-box">${otp}</div>
+      <p>Hello ${name},</p>
+      <p>We regret to inform you that your <strong>Apna Labour</strong> application has been <strong>rejected</strong>.</p>
+      <div class="highlight-box">Unfortunately, you were not selected this time.</div>
+      <p>You can try applying again in the future. We wish you the best.</p>
     </div>
     <div class="email-footer">
       <p>&copy; 2025 Apna Labour. All rights reserved.</p>
@@ -81,4 +68,4 @@ const otpTemplate = (otp) => `
 </html>
 `;
 
-module.exports = otpTemplate;
+module.exports = rejectApplicantTemplate;
