@@ -19,7 +19,8 @@ import lightRepairImg from "../assets/light-repair.jpg";
 import wireRepairImg from "../assets/wire-repair.jpg";
 
 const Electrician = () => {
-  const [selectedCategory, setSelectedCategory] = useState(null);
+ const [selectedCategory, setSelectedCategory] = useState("repairs"); // 👈 default repairs
+
   const [selectedService, setSelectedService] = useState(null);
   const navigate = useNavigate(); // ✅ hook for navigation
 
@@ -75,6 +76,16 @@ const subServicesMap = {
   ],
 };
 
+const mostDemandingServices = [
+  { id: 1, name: "Decorative fan installation", price: "₹199", img: fanImg, route: "/fan" },
+  { id: 2, name: "Regular ceiling fan installation", price: "₹149", img: fanImg, route: "/fan" },
+  { id: 3, name: "Regular doorbell installation", price: "₹99", img: doorbellImg, route: "/doorbell" },
+  { id: 4, name: "Automatic top load machine", price: "₹199", img: otherappliences, route: "/appliances" },
+  { id: 5, name: "TV Check-up", price: "₹249", img: otherappliences, route: "/appliances" },
+  { id: 6, name: "Air cooler service", price: "₹599", img: otherappliences, route: "/appliances" },
+  { id: 7, name: "Foam jet AC service", price: "₹599", img: otherappliences, route: "/appliances" },
+  { id: 8, name: "AC No cooling repair", price: "₹299", img: otherappliences, route: "/appliances" },
+];
 
   const options = subServicesMap[selectedService?.name] || [];
 
@@ -96,9 +107,7 @@ const subServicesMap = {
         <h3 className="text-xl font-semibold mb-6">Book by category</h3>
         <div className="grid grid-cols-2 gap-6">
           <div
-            onClick={() =>
-              setSelectedCategory(selectedCategory === "repairs" ? null : "repairs")
-            }
+            onClick={() => setSelectedCategory("repairs")} // ✅ always show repairs
             className="cursor-pointer relative rounded-lg overflow-hidden shadow-md"
           >
             <img src={lightImg} alt="Repairs" className="w-full h-40 object-cover" />
@@ -187,10 +196,57 @@ const subServicesMap = {
             </div>
           </div>
         </div>
-        
       )}
 
-      
+      {/* Most Demanding Services */}
+      <section className="py-10 px-6 md:px-16">
+        <h3 className="text-xl font-semibold mb-6">Most Demanding Services</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {mostDemandingServices.map((service) => (
+            <div
+              key={service.id}
+              className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition bg-white"
+            >
+              {/* Service Image */}
+              <img
+                src={service.img}
+                alt={service.name}
+                className="w-full h-40 object-contain bg-gray-50"
+              />
+              {/* Content */}
+              <div className="p-4">
+                <p className="font-semibold text-gray-800">{service.name}</p>
+
+                {/* Ratings */}
+                <div className="flex items-center text-sm text-gray-500 mt-1">
+                  ⭐⭐⭐⭐⭐ <span className="ml-1">(328)</span>
+                </div>
+
+                {/* Price */}
+                <p className="text-sm text-gray-600 mt-1">
+                  starts at <span className="font-medium">{service.price}</span>
+                </p>
+
+                {/* Actions */}
+                <div className="mt-3 flex justify-between items-center">
+                  <button
+                    onClick={() => navigate(service.route)}
+                    className="text-blue-600 text-sm font-medium hover:underline"
+                  >
+                    View details
+                  </button>
+                  <button
+                    onClick={() => navigate(service.route)}
+                    className="bg-[#023E8A] text-white px-3 py-1 text-sm rounded-md hover:bg-[#0353A4]"
+                  >
+                    Book
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 };

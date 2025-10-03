@@ -21,6 +21,18 @@ import Microwave from "../pages/Appliance/Microwave";
 import Refrigerator from "../pages/Appliance/Refrigerator";
 import Stove from "../pages/Appliance/Stove";
 import WaterPurifier from "../pages/Appliance/WaterPurifier";
+import Painting from "../pages/Painting/Painting";
+import InteriorPainting from "../pages/Painting/InteriorPainting";
+import WallsPainting from "../pages/Painting/WallsPainting";
+import Waterproofing from "../pages/Painting/Waterproofing";
+import ExternalWaterproofing from "../pages/Painting/ExternalWaterproofing";
+import MenHome from "../pages/mensalon/menhome";
+import Haircut from "../pages/MenSalon/Haircut";
+import Detan from "../pages/mensalon/Detan";
+import Menicure from "../pages/mensalon/Menicure";
+import Ayurveda from "../pages/mensalon/Ayurveda";
+import Massage from "../pages/mensalon/Massage";
+
 
 const appRoutes = [
   { path: "/", element: <Home /> },
@@ -42,6 +54,18 @@ const appRoutes = [
   { path: "/sanitization", element: <Sanitization /> },
   { path: "/leather-sofa", element: <LeatherSofa /> },
   { path: "/sofa-cleaning", element: <SofaCleaning /> },
+  { path: "/painting", element: <Painting /> },
+  { path: "/painting/interior", element: <InteriorPainting /> },
+  { path: "/painting/wallspainting", element: <WallsPainting /> },
+   { path: "/painting/waterproofing", element: <Waterproofing /> },
+    { path: "/painting/externalwaterproofing", element: <ExternalWaterproofing /> },
+   { path: "/menhome", element: <MenHome /> },
+    { path: "/mensalon/haircut", element: <Haircut /> },
+     { path: "/mensalon/detan", element: <Detan /> },
+  { path: "/mensalon/menicure", element: <Menicure /> },
+  { path: "/mensalon/ayurveda", element: <Ayurveda /> },
+   { path: "/mensalon/massage", element: <Massage /> },
+
 ];
 
 export default appRoutes;

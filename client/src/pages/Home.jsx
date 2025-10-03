@@ -14,7 +14,7 @@ import { Link } from "react-router-dom";
 import service1 from "../assets/service1.png";
 import service2 from "../assets/service2.png";
 import service3 from "../assets/service3.png";
-
+import { fetchCategories } from "../redux/serviceSlice";
 
 // New section service images (replace with actual assets)
 import appliance from "../assets/Appliance1.png";
@@ -64,6 +64,7 @@ import trust from "../assets/trust.png";
 import contact from "../assets/contact.png";
 
 const Home = () => {
+  
   const services = [
     { img: service1, title: "Home Cleaning" },
     { img: service2, title: "Plumbing" },
@@ -77,10 +78,10 @@ const Home = () => {
     { img: pest, title: "Cleaning & Pest Control", path: "/cleaning-pest" },
     { img: electrician, title: "Electrician", path: "/electrician" },
     { img: plumber, title: "Plumber & Carpenter", path: "/plumber-carpenter" },
-    { img: painting, title: "Painting & Waterproofing", path: "/painting-waterproofing" },
+    { img: painting, title: "Painting & Waterproofing", path: "/painting" },
     { img: womenSalon, title: "Women Salon", path: "/women-salon" },
-    { img: menSalon, title: "Men Salon", path: "/men-salon" },
-    { img: casuallabarer, title: "Casual Labourer", path: "/casual-labourer" },
+    { img: menSalon, title: "Men Salon", path: "/menhome" },
+    { img: casuallabarer, title: "Casual Labourer", path: "/casual" },
   ];
 
 
