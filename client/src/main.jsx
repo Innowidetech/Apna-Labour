@@ -1,15 +1,22 @@
 import { StrictMode } from "react";
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import "./index.css";
 import App from "./App.jsx";
-import { store } from "./app/store";
-import { Provider } from "react-redux";
 
-createRoot(document.getElementById("root")).render(
+// ✅ Import Redux
+import { Provider } from "react-redux";
+import store from "../src/redux/Appliance/store";  
+
+const root = createRoot(document.getElementById("root"));
+
+root.render(
   <StrictMode>
-    <Provider store={store}>
-      <App />
-    </Provider>
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
+      <Provider store={store}>
+        <App />
+      </Provider>
+    </GoogleOAuthProvider>
   </StrictMode>
 );
