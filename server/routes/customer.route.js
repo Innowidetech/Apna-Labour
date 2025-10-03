@@ -6,7 +6,11 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
     updateUserStatus, getCategories, getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance,
     getSpecificServicesByServiceType, getUnitsBySpecificService, createBooking, verifyPayment, markNotificationAsRead,
     markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews, cancelBooking,
+<<<<<<< HEAD
     deleteNotification, getHeroByCategory, getSpecificServiceDetails } = require('../controllers/customer.controller')
+=======
+    deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem } = require('../controllers/customer.controller')
+>>>>>>> eb7d9c25a051375862a660fe49d4e9bd2d17ed20
 
 const router = express.Router();
 
@@ -16,6 +20,10 @@ const router = express.Router();
 router.post("/cart/:unitId", addToCart);
 router.delete("/cart/remove/:unitId", removeFromCart);
 router.get("/cart", getCart);
+<<<<<<< HEAD
+=======
+router.post("/cart/add/:unitId", addToCartItem);
+>>>>>>> eb7d9c25a051375862a660fe49d4e9bd2d17ed20
 router.post('/book-service', protect, authorize('Customer'), bookService);
 router.post('/book-labourer', protect, authorize('Customer'), bookLabourer);
 router.get('/search-services', protect, authorize('Customer'), searchServices);
