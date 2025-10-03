@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Search, ChevronRight, Star, Users, UserCog } from "lucide-react";
 import heroBg from "../assets/heroBg.png";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -14,14 +14,7 @@ import service2 from "../assets/service2.png";
 import service3 from "../assets/service3.png";
 
 // New section service images (replace with actual assets)
-import appliance from "../assets/Appliance1.png";
-import pest from "../assets/Appliance2.png";
-import electrician from "../assets/Appliance3.png";
-import plumber from "../assets/Appliance4.png";
-import painting from "../assets/Appliance5.png";
-import womenSalon from "../assets/Appliance6.png";
-import menSalon from "../assets/Appliance7.png";
-import casuallabarer from "../assets/Appliance8.png";
+
 import massageService from "../assets/massageService.png"
 import plant from "../assets/plant.png"
 // Slider services (replace images with your actual assets if needed)
@@ -60,24 +53,45 @@ import installation4 from "../assets/installation4.png";
 import trust from "../assets/trust.png";
 import contact from "../assets/contact.png";
 const Home = () => {
+  const [allServices, setAllServices] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const services = [
     { img: service1, title: "Home Cleaning" },
     { img: service2, title: "Plumbing" },
     { img: service3, title: "Electrical" },
   ];
 
-  const allServices = [
-    { img: appliance, title: "Appliance Repair", path: "/appliance-repair" },
+  useEffect(() => {
+    const fetchServices = async () => {
+      try {
+        const res = await fetch("https://apnalabour.onrender.com/api/customer/categories");
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAllServices(data);
+        } else if (data.categories) {
+          setAllServices(data.categories);
+        } else {
+          setFetchError("Invalid API response");
+        }
+      } catch (err) {
+        setFetchError("Failed to fetch services.");
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchServices();
+  }, []);
 
-    { img: pest, title: "Cleaning & Pest Control", path: "/cleaning-pest" },
-    { img: electrician, title: "Electrician", path: "/electrician" },
-    { img: plumber, title: "Plumber & Carpenter", path: "/plumber-carpenter" },
-    { img: painting, title: "Painting & Waterproofing", path: "/painting-waterproofing" },
-    { img: womenSalon, title: "Women Salon", path: "/women-salon" },
-    { img: menSalon, title: "Men Salon", path: "/men-salon" },
-    { img: casuallabarer, title: "Casual Labourer", path: "/casual-labourer" },
-  ];
-
+const slugify = (text) =>
+    text
+      .toString()
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-") // Replace spaces with -
+      .replace(/[^\w-]+/g, "") // Remove all non-word chars
+      .replace(/--+/g, "-"); // Replace multiple - with single -
 
   // Updated slider with different details
   const sliderServices = [
@@ -213,27 +227,32 @@ const Home = () => {
           Complete Home Care Under One Roof!
         </h2>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 max-w-6xl mx-auto">
-          {allServices.map((service, i) => (
-            <Link
-              key={i}
-              to={service.path}
-              className="flex flex-col items-center text-center p-4 hover:shadow-md transition"
-            >
-              <div className="w-20 h-20 flex items-center justify-center mb-3">
-                <img
-                  src={service.img}
-                  alt={service.title}
-                  className="max-w-full max-h-full object-contain"
-                />
-              </div>
-              <p className="text-sm sm:text-base font-medium text-gray-700">
-                {service.title}
-              </p>
-            </Link>
-          ))}
-        </div>
-
+        {isLoading ? (
+          <p className="text-center text-gray-600">Loading services...</p>
+        ) : fetchError ? (
+          <p className="text-center text-red-500">{fetchError}</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 max-w-6xl mx-auto">
+            {allServices.map((service, i) => (
+             <Link
+  key={service._id || i}
+  to={`/service/${service._id}`}  // Use the service's ID for navigation
+  className="flex flex-col items-center text-center p-4 hover:shadow-md transition rounded"
+>
+  <div className="w-20 h-20 flex items-center justify-center mb-3">
+    <img
+      src={service.image || defaultServiceIcon}
+      alt={service.title}
+      className="max-w-full max-h-full object-contain"
+    />
+  </div>
+  <p className="text-sm sm:text-base font-medium text-gray-700">
+    {service.title}
+  </p>
+</Link>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Image Slider Section */}
