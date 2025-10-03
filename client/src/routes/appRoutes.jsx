@@ -91,6 +91,8 @@
 
 import React from "react";
 import Home from "../pages/Home";
+import ModalServicePage from "../pages/ModalServicePage";
+
 
 // Dynamic service details page
 import ServiceDetails from "../pages/ServiceDetails";
@@ -100,6 +102,9 @@ const appRoutes = [
 
   // Dynamic route for service details
 { path: "/service/:id", element: <ServiceDetails /> },
+{ path: "/services/:id", element: <ModalServicePage /> },
+
+
 
 
 ];

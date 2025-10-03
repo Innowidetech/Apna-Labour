@@ -209,7 +209,10 @@ exports.addToCart = async (req, res) => {
         return res.status(200).json({
             message: "Item added to cart",
             cart,
+            guestId: guestId || undefined, // 👈 return guestId only if guest
+
             guestId: guestId || undefined, //  return guestId only if guest
+
         });
 
     } catch (err) {
@@ -220,7 +223,10 @@ exports.addToCart = async (req, res) => {
 exports.getCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.id : null;
+        let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
+
         let guestId = req.headers["x-guest-id"]; //  from frontend header
+
 
         // Merge guest cart into user cart if logged in
         if (userId && guestId) {
@@ -251,7 +257,11 @@ exports.getCart = async (req, res) => {
         }
 
         const query = userId ? { user: userId } : { guestId };
+
+        const cart = await Cart.findOne(query).populate("items.unit", "title image");
+
         const cart = await Cart.findOne(query).populate("items.unit", "title image ");
+
 
         if (!cart || cart.items.length === 0) {
             return res.status(200).json({
@@ -294,6 +304,13 @@ exports.getCart = async (req, res) => {
 exports.removeFromCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.id : null;
+
+        const guestId = req.cookies.guestId;
+        const { unitId } = req.params;
+
+        const query = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(query);
+        if (!cart) return res.status(404).json({ message: "Cart not found" });
         let guestId = req.headers["x-guest-id"]; //  use header like add/get cart
         const { unitId } = req.params;
 
@@ -388,13 +405,18 @@ exports.addToCartItem = async (req, res) => {
             }
         }
 
+
+        cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
         await cart.save();
+
+        return res.status(200).json({ message: "Item removed from cart", cart });
 
         return res.status(200).json({
             message: "Item added to cart",
             cart,
             guestId: guestId || undefined,
         });
+
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }

@@ -57,9 +57,13 @@ import trust from "../assets/trust.png";
 import contact from "../assets/contact.png";
 
 const Home = () => {
+
   const [allServices, setAllServices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
+
+  
+
   const services = [
     { img: service1, title: "Home Cleaning" },
     { img: service2, title: "Plumbing" },
@@ -89,18 +93,6 @@ const Home = () => {
     fetchServices();
   }, []);
 
-
-  // const allServices = [
-  //   { img: appliance, title: "Appliance Repair", path: "/appliance-repair" },
-
-  //   { img: pest, title: "Cleaning & Pest Control", path: "/cleaning-pest" },
-  //   { img: electrician, title: "Electrician", path: "/electrician" },
-  //   { img: plumber, title: "Plumber & Carpenter", path: "/plumber-carpenter" },
-  //   { img: painting, title: "Painting & Waterproofing", path: "/painting-waterproofing" },
-  //   { img: womenSalon, title: "Women Salon", path: "/women-salon" },
-  //   { img: menSalon, title: "Men Salon", path: "/men-salon" },
-  //   { img: casuallabarer, title: "Casual Labourer", path: "/casual-labourer" },
-  // ];
 
 
 const slugify = (text) =>
@@ -256,23 +248,24 @@ const slugify = (text) =>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 max-w-6xl mx-auto">
             {allServices.map((service, i) => (
-             <Link
-  key={service._id || i}
-  to={`/service/${service._id}`}  // Use the service's ID for navigation
-  className="flex flex-col items-center text-center p-4 hover:shadow-md transition rounded"
->
-  <div className="w-20 h-20 flex items-center justify-center mb-3">
-    <img
-      src={service.image || defaultServiceIcon}
-      alt={service.title}
-      className="max-w-full max-h-full object-contain"
-    />
-  </div>
-  <p className="text-sm sm:text-base font-medium text-gray-700">
-    {service.title}
-  </p>
-</Link>
-            ))}
+  <Link
+    key={service._id || i}
+    to={`/service/${service._id}`}   // ✅ Always singular
+    className="flex flex-col items-center text-center p-4 hover:shadow-md transition rounded"
+  >
+    <div className="w-20 h-20 flex items-center justify-center mb-3">
+      <img
+        src={service.image || defaultServiceIcon}
+        alt={service.title}
+        className="max-w-full max-h-full object-contain"
+      />
+    </div>
+    <p className="text-sm sm:text-base font-medium text-gray-700">
+      {service.title}
+    </p>
+  </Link>
+))}
+
           </div>
         )}
       </section>
