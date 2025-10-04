@@ -137,7 +137,7 @@ const slugify = (text) =>
       {/* Hero Section */}
       <section
         className="relative bg-cover bg-center bg-no-repeat rounded-3xl overflow-hidden mx-4 md:mx-9 mt-6 min-h-[70vh] sm:min-h-[80vh]"
-        style={{ backgroundImage: `url(${heroBg})` }}
+        style={{ backgroundImage: `url(${heroBg})`}}
       >
         {/* Overlay */}
         <div className="relative max-w-7xl mx-auto px-4 md:px-6 py-10 sm:py-16 md:py-32 flex flex-col md:flex-row items-center bg-black/40 rounded-3xl h-full">
@@ -907,4 +907,4 @@ const slugify = (text) =>
   );
 };
 
-export default Home;
+export default Home;

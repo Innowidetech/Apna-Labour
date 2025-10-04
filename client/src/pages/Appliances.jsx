@@ -129,6 +129,7 @@ const Appliances = () => {
           ))}
         </div>
       </section>
+      
 
       {/* Services */}
       <section className="py-10 px-6 md:px-16">
