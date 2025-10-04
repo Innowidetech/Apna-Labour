@@ -1088,6 +1088,37 @@ exports.addUnitReview = async (req, res) => {
     }
 };
 
+exports.addLabourerReview = async (req, res) => {
+    try {
+        const userId = req.user.id; // from auth middleware
+        const { labourerId } = req.params;
+        const { rating, feedback } = req.body;
+
+        // Validate labourer exists
+        const labourer = await Labourer.findById(labourerId);
+        if (!labourer) return res.status(404).json({ message: "Labourer not found" });
+
+        // Check if user already reviewed this labourer
+        const existingReview = await Review.findOne({ userId, targetId: labourerId, targetType: "Labourer" });
+        if (existingReview) {
+            return res.status(400).json({ message: "You already reviewed this labourer" });
+        }
+
+        const review = new Review({
+            targetType: "Labourer",
+            targetId: labourerId,
+            userId,
+            rating,
+            feedback,
+        });
+
+        await review.save();
+        return res.status(201).json({ message: "Review added successfully", review });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
 
 //  Edit a Review for a Unit
 exports.editUnitReview = async (req, res) => {
@@ -1252,5 +1283,50 @@ exports.cancelBooking = async (req, res) => {
     }
 };
 
+exports.getLabourersByType = async (req, res) => {
+    try {
+        const { type } = req.params;
 
+        if (!['Individual', 'Team'].includes(type)) {
+            return res.status(400).json({ success: false, message: 'Invalid labourer type' });
+        }
+
+        const labourers = await Labourer.find({
+            registrationType: type,
+            status: 'Accepted'
+        })
+            .populate('userId'); // populate all user fields
+
+        // Map to required fields
+        const mappedLabourers = labourers.map(labour => {
+            const baseData = {
+                _id: labour._id,              // Labourer ID
+                userId: labour.userId._id,    // User ID
+                name: labour.userId.name,
+                distance: labour.distance,
+                image: labour.image,
+                skill: labour.skill,
+                experience: labour.experience,
+                cost: labour.cost,
+                isAvailable: labour.isAvailable,
+            };
+
+            if (type === 'Team') {
+                // ensure teamName exists
+                baseData.teamName = labour.teamName || 'Team';
+            }
+
+            return baseData;
+        });
+
+        res.status(200).json({
+            success: true,
+            labourers: mappedLabourers
+        });
+
+    } catch (error) {
+        console.error('Error fetching labourers by type:', error);
+        res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    }
+};
 
