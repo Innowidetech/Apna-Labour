@@ -18,19 +18,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://apnalabour.vercel.app"
+  "https://apnalabour.vercel.app",
+  "https://apnalabor.web.app"
 ];
+
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin) || !origin) {
-        // allow requests with no origin (like Postman)
+      // Allow requests with no origin (Postman, curl) or if origin is in the whitelist
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        callback(new Error(`CORS error: Origin ${origin} not allowed`));
       }
     },
-    credentials: true, // 👈 this allows cookies (guestId) to be sent
+    credentials: true, // allows cookies (guestId) to be sent
   })
 );
 
