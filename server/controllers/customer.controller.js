@@ -1291,28 +1291,53 @@ exports.getLabourersByType = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid labourer type' });
         }
 
+        // ✅ Get labourers with user populated
         const labourers = await Labourer.find({
             registrationType: type,
             status: 'Accepted'
-        })
-            .populate('userId'); // populate all user fields
+        }).populate('userId', 'name email mobileNumber');
 
-        // Map to required fields
+        // ✅ Collect labourer IDs for bulk review lookup
+        const labourerIds = labourers.map(l => l._id);
+
+        // ✅ Fetch all reviews for these labourers in one query
+        const reviews = await Review.find({
+            targetId: { $in: labourerIds },
+            targetType: "Labourer"
+        }).populate('userId', 'name email');
+
+        // ✅ Group reviews by labourer
+        const reviewMap = {};
+        reviews.forEach(r => {
+            if (!reviewMap[r.targetId]) reviewMap[r.targetId] = [];
+            reviewMap[r.targetId].push(r);
+        });
+
+        // ✅ Map final response with ratings
         const mappedLabourers = labourers.map(labour => {
+            const labourReviews = reviewMap[labour._id] || [];
+            const totalReviews = labourReviews.length;
+            const avgRating = totalReviews > 0
+                ? (labourReviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
+                : 0;
+
             const baseData = {
-                _id: labour._id,              // Labourer ID
-                userId: labour.userId._id,    // User ID
-                name: labour.userId.name,
+                _id: labour._id,
+                userId: labour.userId?._id,
+                name: labour.userId?.name,
+                email: labour.userId?.email,
+                mobileNumber: labour.userId?.mobileNumber,
                 distance: labour.distance,
                 image: labour.image,
                 skill: labour.skill,
                 experience: labour.experience,
                 cost: labour.cost,
                 isAvailable: labour.isAvailable,
+                averageRating: Number(avgRating),
+                totalReviews,
             };
 
             if (type === 'Team') {
-                // ensure teamName exists
                 baseData.teamName = labour.teamName || 'Team';
             }
 
