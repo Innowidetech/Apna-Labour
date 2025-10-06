@@ -31,6 +31,40 @@ exports.protect = async (req, res, next) => {
     }
 };
 
+exports.optionalAuth = async (req, res, next) => {
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+
+        if (!token) {
+            // No token → treat as guest
+            req.user = null;
+            return next();
+        }
+
+        // Verify token
+        const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+
+        const user = await User.findById(decodedToken.userId);
+        if (!user) {
+            req.user = null;
+            return next();
+        }
+
+        // attach user info
+        req.user = {
+            id: user._id,
+            role: user.role
+        };
+
+        next();
+    } catch (err) {
+        console.error("OptionalAuth error:", err.message);
+        // If token invalid/expired → treat as guest, not error
+        req.user = null;
+        return next();
+    }
+};
+
 // Middleware to restrict to specific roles (admin, etc.)
 exports.authorize = (...roles) => {
     return (req, res, next) => {

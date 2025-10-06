@@ -10,6 +10,7 @@ const labourerRouter = require('./routes/labourer.route');
 const customerRouter = require('./routes/customer.route');
 const userRouter = require('./routes/user.router');
 const landingPageRouter = require('./routes/landingPages.route');
+const paymentRouter = require('./routes/payment.routes');
 
 const app = express();
 app.use(cookieParser());
@@ -42,6 +43,7 @@ app.use('/api/labourer', labourerRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/user', userRouter);
 app.use('/api/services', landingPageRouter);
+app.use('/api/payment', paymentRouter);
 
 
 mongoose.connect(process.env.MONGODB_URL)

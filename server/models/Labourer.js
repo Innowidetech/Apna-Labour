@@ -66,12 +66,20 @@ const LabourerSchema = new mongoose.Schema({
         default: 'Pending'
     },
 
-    distance: { type: String, default: '0km' },
+    distance: {
+        type: Map,
+        of: String,
+        default: new Map([['default', '0 km']]) // initializes with "default": "0 km"
+    },
     isAvailable: { type: Boolean, default: true },
     trainingStatus: {
         type: String,
         enum: ['Completed', 'Not Completed'],
         default: 'Not Completed'
+    },
+    location: {
+        lat: { type: Number },
+        lng: { type: Number }
     }
 
 }, { timestamps: true });

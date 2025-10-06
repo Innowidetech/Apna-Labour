@@ -1,12 +1,14 @@
 const express = require('express');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, authorize, optionalAuth } = require('../middleware/auth.middleware');
 const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchServices, getProfile, updateCustomerProfile,
     updateUserStatus, getCategories, getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance,
     getSpecificServicesByServiceType, getUnitsBySpecificService, createBooking, verifyPayment, markNotificationAsRead,
     markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews, cancelBooking,
-    deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType,addLabourerReview
+    deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
+    createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName
+
 } = require('../controllers/customer.controller')
 
 const router = express.Router();
@@ -14,12 +16,12 @@ const router = express.Router();
 // router.post('/cart', protect, addToCart);
 // router.delete('/cart/remove/:id', protect, removeFromCart);
 // router.get('/cart', protect, getCart);
-router.post("/cart/:unitId", addToCart);
-router.delete("/cart/remove/:unitId", removeFromCart);
-router.get("/cart", getCart);
+router.post("/cart/:unitId", optionalAuth, addToCart);
+router.delete("/cart/remove/:unitId", optionalAuth, removeFromCart);
+router.get("/cart", optionalAuth, getCart);
 // router.post("/cart/add/:unitId", addToCartItem);
-router.post('/book-service', protect, authorize('Customer'), bookService);
-router.post('/book-labourer', protect, authorize('Customer'), bookLabourer);
+// router.post('/book-service', protect, authorize('Customer'), bookService);
+// router.post('/book-labourer', protect, authorize('Customer'), bookLabourer);
 router.get('/search-services', protect, authorize('Customer'), searchServices);
 
 router.get("/categories", getCategories);
@@ -31,11 +33,13 @@ router.get("/specific-services/units/:id", getUnitsBySpecificService);
 router.get('/hero/:id', getHeroByCategory);
 
 router.get('/profile', protect, authorize('Customer'), getProfile);
+router.get('/profile/name', protect, authorize('Customer'), getUserProfileName);
 router.put("/profile", protect, authorize("Customer"), upload.single("image"), updateCustomerProfile);
 router.patch("/:id/status", protect, authorize("Customer"), updateUserStatus);
 
 router.post("/bookings/create", protect, createBooking);
-router.post("/bookings/verify", protect, verifyPayment);
+router.post("/bookings/slot", protect, saveSlot);
+//router.post("/bookings/verify", protect, verifyPayment);
 
 router.put("/:id/read", protect, authorize("Customer"), markNotificationAsRead);
 router.put("/mark-all-read", protect, authorize("Customer"), markAllNotificationsAsRead);
@@ -47,9 +51,15 @@ router.put("/unit/:reviewId", protect, authorize("Customer"), editUnitReview);
 router.delete("/unit/:reviewId", protect, authorize("Customer"), deleteUnitReview);
 router.get("/unit/:unitId", protect, authorize("Customer"), getUnitReviews);
 router.get("/specific-serviceDetails/:id", getSpecificServiceDetails);
+router.get("/specific-labourerDetails/:id", getSpecificLabourDetails);
 
-router.post("/cancellation/:id", protect, authorize("Customer"), cancelBooking);
-router.get('/labourers/type/:type', getLabourersByType);
+
+//router.post("/cancellation/:id", protect, authorize("Customer"), cancelBooking);
+router.get('/labourers/type/:type', optionalAuth, getLabourersByType);
+
+router.post('/labour-booking', protect, authorize('Customer'), createLabourBooking);
+router.get('/labour-booking/my-bookings', protect, authorize('Customer'), getLabourBookings);
+
 
 module.exports = router;
 
