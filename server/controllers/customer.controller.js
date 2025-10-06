@@ -1370,39 +1370,6 @@ exports.getLabourersByType = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid labourer type" });
         }
 
-        // 🔹 Get the customer's saved address
-        const customer = await Customer.findOne({ userId });
-        if (!customer || !customer.address) {
-            return res.status(400).json({
-                success: false,
-                message: "Customer address not found. Please update your profile.",
-            });
-        }
-
-        // 🔹 Convert user's address → coordinates (and store if not already present)
-        let userCoords = { lat: customer.latitude, lng: customer.longitude };
-        if (!userCoords.lat || !userCoords.lng) {
-            try {
-                const formattedAddress = formatAddress(customer.address);
-                if (!formattedAddress) throw new Error("Address missing or invalid");
-
-                const coords = await geocodeAddress(formattedAddress);
-                if (coords && coords.lat && coords.lng) {
-                    userCoords = coords;
-                    // Store back in DB
-                    customer.latitude = coords.lat;
-                    customer.longitude = coords.lng;
-                    await customer.save();
-                } else {
-                    console.error("Failed to get coordinates for customer address");
-                    userCoords = null;
-                }
-            } catch (err) {
-                console.error("Failed to geocode user address:", err.message);
-                userCoords = null;
-            }
-        }
-
         // 🔹 Get all accepted labourers by type
         const labourers = await Labourer.find({ registrationType: type, status: "Accepted" })
             .populate("userId", "name email mobileNumber");
@@ -1420,40 +1387,7 @@ exports.getLabourersByType = async (req, res) => {
         });
 
         // 🔹 Prepare mapped data
-        const mappedLabourers = [];
-        for (const labour of labourers) {
-            let distance = "0 km";
-
-            // If labourer doesn’t have coords, get and store them
-            if (!labour.latitude || !labour.longitude) {
-                try {
-                    const formattedAddress = formatAddress(labour.address);
-                    if (formattedAddress) {
-                        const coords = await geocodeAddress(formattedAddress);
-                        if (coords && coords.lat && coords.lng) {
-                            labour.latitude = coords.lat;
-                            labour.longitude = coords.lng;
-                            await labour.save();
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Failed to geocode labourer ${labour._id}:`, err.message);
-                }
-            }
-
-            // 🔹 Calculate distance (only if both coords exist)
-            if (userCoords && labour.latitude && labour.longitude) {
-                try {
-                    distance = await getDistanceBetweenPoints(userCoords, {
-                        lat: labour.latitude,
-                        lng: labour.longitude,
-                    });
-                } catch (err) {
-                    console.error(`Failed to calculate distance for labourer ${labour._id}:`, err.message);
-                }
-            }
-
-            // 🔹 Ratings
+        const mappedLabourers = labourers.map(labour => {
             const labourReviews = reviewMap[labour._id] || [];
             const totalReviews = labourReviews.length;
             const avgRating =
@@ -1461,13 +1395,13 @@ exports.getLabourersByType = async (req, res) => {
                     ? (labourReviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
                     : 0;
 
-            mappedLabourers.push({
+            return {
                 _id: labour._id,
                 userId: labour.userId?._id,
                 name: labour.userId?.name,
                 email: labour.userId?.email,
                 mobileNumber: labour.userId?.mobileNumber,
-                distance,
+                distance: "0 km", // No distance calculation
                 image: labour.image,
                 skill: labour.skill,
                 experience: labour.experience,
@@ -1476,8 +1410,8 @@ exports.getLabourersByType = async (req, res) => {
                 averageRating: Number(avgRating),
                 totalReviews,
                 ...(type === "Team" && { teamName: labour.teamName || "Team" }),
-            });
-        }
+            };
+        });
 
         res.json({ success: true, labourers: mappedLabourers });
     } catch (error) {
