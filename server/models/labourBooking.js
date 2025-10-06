@@ -75,4 +75,4 @@ const labourBookingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("LabourBooking", labourBookingSchema);
+module.exports = mongoose.model("labourBooking", labourBookingSchema);

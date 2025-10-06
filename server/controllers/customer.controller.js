@@ -18,7 +18,7 @@ const crypto = require("crypto");
 const { formatAddress } = require('../utils/formatAddress');
 const { geocodeAddress } = require("../utils/geocodeAddress");
 const { getDistanceBetweenPoints } = require("../utils/getDistance");
-const LabourBooking = require("../models/LabourBooking");
+const LabourBooking = require("../models/labourBooking");
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
