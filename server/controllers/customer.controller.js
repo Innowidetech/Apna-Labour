@@ -511,30 +511,39 @@ exports.getUserProfileName = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // Fetch base user info
-        const user = await User.findById(userId).select("name email mobileNumber role isActive createdAt updatedAt");
+        // 1️⃣ Fetch base user info (including _id)
+        const user = await User.findById(userId).select(
+            "_id name email mobileNumber role isActive"
+        );
 
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        let profileData = { user };
+        // 2️⃣ Fetch customer address
+        const customer = await Customer.findOne({ userId }).select("address");
 
-        // Depending on role, fetch extra info
-        if (user.role === "Customer") {
-            const customer = await Customer.findOne({ userId });
-            if (customer) {
-                profileData.customer = customer;
-                // merge mobile number if not present in user
-                if (!user.mobileNumber && customer.phoneNumber) {
-                    profileData.user.mobileNumber = customer.phoneNumber;
+        // 3️⃣ Fetch latest booking details
+        const latestBooking = await Booking.findOne({ user: userId })
+            .sort({ createdAt: -1 })
+            .select("bookingDate timeSlot");
+
+        // 4️⃣ Build response object
+        const profile = {
+            user,
+            address: customer ? customer.address : null,
+            booking: latestBooking
+                ? {
+                    bookingDate: latestBooking.bookingDate,
+                    timeSlot: latestBooking.timeSlot,
                 }
-            }
-        }
+                : null,
+        };
 
+        // ✅ Send response
         res.status(200).json({
             message: "Profile data fetched successfully",
-            profile: profileData
+            profile,
         });
     } catch (error) {
         console.error("Error fetching profile:", error);
@@ -1529,18 +1538,27 @@ exports.createLabourBooking = async (req, res) => {
 
 exports.getLabourBookings = async (req, res) => {
     try {
-        const UserId = req.user?.id;
+        const userId = req.user?.id;
 
-        if (!UserId) {
+        if (!userId) {
             return res.status(401).json({ success: false, message: "Unauthorized" });
         }
 
-        // Fetch bookings for the customer
-        const bookings = await LabourBooking.find({ UserId })
-            .populate("labourer", "userId registrationType skill teamName cost image experience")
+        // ✅ Fetch customer info (address only)
+        const customer = await Customer.findOne({ userId }).select("address");
+        if (!customer) {
+            return res.status(404).json({ success: false, message: "Customer profile not found" });
+        }
+
+        // ✅ Fetch all bookings made by this user
+        const bookings = await LabourBooking.find({ UserId: userId })
+            .populate({
+                path: "labourer",
+                select: "registrationType skill teamName cost image experience address"
+            })
             .sort({ createdAt: -1 });
 
-        // Map each booking and calculate cost breakdown dynamically
+        // ✅ Prepare booking data
         const mappedBookings = bookings.map((b) => {
             const start = new Date(b.startDate);
             const end = new Date(b.endDate);
@@ -1553,8 +1571,8 @@ exports.getLabourBookings = async (req, res) => {
 
             if (b.labourType === "Individual") {
                 dailyRate = b.labourer.cost || 0;
-                serviceFees = Math.round(dailyRate * totalDays * 0.1); // 10% service fee
-                tax = Math.round((dailyRate * totalDays + serviceFees) * 0.18); // 18% tax
+                serviceFees = Math.round(dailyRate * totalDays * 0.1);
+                tax = Math.round((dailyRate * totalDays + serviceFees) * 0.18);
                 totalAmount = dailyRate * totalDays + serviceFees + tax;
             } else if (b.labourType === "Team") {
                 const numberOfWorkers = b.numberOfWorkers || 1;
@@ -1579,19 +1597,31 @@ exports.getLabourBookings = async (req, res) => {
                 tax,
                 totalAmount,
                 labourer: {
-                    id: b.labourer._id,
-                    skill: b.labourer.skill,
-                    teamName: b.labourer.teamName,
-                    cost: b.labourer.cost,
-                    image: b.labourer.image,
-                    experience: b.labourer.experience,
+                    id: b.labourer?._id,
+                    skill: b.labourer?.skill,
+                    teamName: b.labourer?.teamName,
+                    cost: b.labourer?.cost,
+                    image: b.labourer?.image,
+                    experience: b.labourer?.experience,
+                    address: b.labourer?.address,
                 },
             };
         });
 
-        res.status(200).json({ success: true, bookings: mappedBookings });
+        // ✅ Final response (customer address at end only once)
+        res.status(200).json({
+            success: true,
+            bookings: mappedBookings,
+            customerAddress: customer.address,
+        });
+
     } catch (error) {
         console.error("Error fetching bookings:", error);
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
     }
 };
+

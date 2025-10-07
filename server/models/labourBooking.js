@@ -18,6 +18,8 @@ const labourBookingSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+     bookingDate: { type: Date },
+     timeSlot: { type: String },
 
     // Labourer being booked
     labourer: {
