@@ -7,7 +7,7 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
     getSpecificServicesByServiceType, getUnitsBySpecificService, createBooking, verifyPayment, markNotificationAsRead,
     markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews, cancelBooking,
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
-    createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName
+    createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount
 
 } = require('../controllers/customer.controller')
 
@@ -33,9 +33,11 @@ router.get("/specific-services/units/:id", getUnitsBySpecificService);
 router.get('/hero/:id', getHeroByCategory);
 
 router.get('/profile', protect, authorize('Customer'), getProfile);
+router.delete("/delete-account", protect, authorize('Customer'), deleteAccount);
+
 router.get('/profile/name', protect, authorize('Customer'), getUserProfileName);
 router.put("/profile", protect, authorize("Customer"), upload.single("image"), updateCustomerProfile);
-router.patch("/:id/status", protect, authorize("Customer"), updateUserStatus);
+router.patch("/status", protect, authorize("Customer"), updateUserStatus);
 
 router.post("/bookings/create", protect, createBooking);
 router.post("/bookings/slot", protect, saveSlot);

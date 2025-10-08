@@ -647,6 +647,44 @@ exports.getProfile = async (req, res) => {
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+exports.deleteAccount = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // ✅ Check if user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // ⚠️ Optional: Soft delete (if you want to keep record)
+        // user.isDeleted = true;
+        // await user.save();
+
+        // 🧹 Delete related data
+        await Promise.all([
+            Customer.deleteOne({ userId }),
+            Booking.deleteMany({ user: userId }),
+            Review.deleteMany({ userId }),
+            Notification.deleteMany({ user: userId }),
+            Dispute.deleteMany({ user: userId }),
+        ]);
+
+        // 🗑️ Finally delete user
+        await User.findByIdAndDelete(userId);
+
+        return res.status(200).json({
+            message: "Account deleted successfully",
+            success: true,
+        });
+    } catch (err) {
+        console.error("Delete Account Error:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
+    }
+};
 
 
 
@@ -705,25 +743,25 @@ exports.updateCustomerProfile = async (req, res) => {
 
 exports.updateUserStatus = async (req, res) => {
     try {
-        const { id } = req.params;
+        const userId = req.user.id; // ✅ get from auth middleware
 
-        // Find the user first
-        const user = await User.findById(id);
+        // Find the user
+        const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        // Flip the status
+        // Flip active/inactive status
         user.isActive = !user.isActive;
         await user.save();
 
-        res.json({
+        return res.status(200).json({
             message: `User ${user.isActive ? "activated" : "deactivated"} successfully`,
             user,
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Something went wrong" });
+        console.error("Update User Status Error:", error);
+        return res.status(500).json({ message: "Something went wrong", error: error.message });
     }
 };
 //  Get all Categories
@@ -1558,31 +1596,25 @@ exports.getLabourBookings = async (req, res) => {
             })
             .sort({ createdAt: -1 });
 
-        // ✅ Prepare booking data
-        const mappedBookings = bookings.map((b) => {
+        // ✅ Prepare individual & team bookings separately
+        const individualBookings = [];
+        const teamBookings = [];
+
+        bookings.forEach((b) => {
             const start = new Date(b.startDate);
             const end = new Date(b.endDate);
             const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
-            let dailyRate = 0;
-            let serviceFees = 0;
-            let tax = 0;
-            let totalAmount = 0;
+            const numberOfWorkers = b.numberOfWorkers || 1;
+            const baseCost = b.labourer?.cost || 0;
+            const dailyRate =
+                b.labourType === "Team" ? baseCost * numberOfWorkers : baseCost;
 
-            if (b.labourType === "Individual") {
-                dailyRate = b.labourer.cost || 0;
-                serviceFees = Math.round(dailyRate * totalDays * 0.1);
-                tax = Math.round((dailyRate * totalDays + serviceFees) * 0.18);
-                totalAmount = dailyRate * totalDays + serviceFees + tax;
-            } else if (b.labourType === "Team") {
-                const numberOfWorkers = b.numberOfWorkers || 1;
-                dailyRate = (b.labourer.cost || 0) * numberOfWorkers;
-                serviceFees = Math.round(dailyRate * totalDays * 0.1);
-                tax = Math.round((dailyRate * totalDays + serviceFees) * 0.18);
-                totalAmount = dailyRate * totalDays + serviceFees + tax;
-            }
+            const serviceFees = Math.round(dailyRate * totalDays * 0.1);
+            const tax = Math.round((dailyRate * totalDays + serviceFees) * 0.18);
+            const totalAmount = dailyRate * totalDays + serviceFees + tax;
 
-            return {
+            const bookingData = {
                 bookingId: b.bookingId,
                 labourType: b.labourType,
                 startDate: b.startDate,
@@ -1606,12 +1638,19 @@ exports.getLabourBookings = async (req, res) => {
                     address: b.labourer?.address,
                 },
             };
+
+            if (b.labourType === "Individual") {
+                individualBookings.push(bookingData);
+            } else if (b.labourType === "Team") {
+                teamBookings.push(bookingData);
+            }
         });
 
-        // ✅ Final response (customer address at end only once)
+        // ✅ Final response
         res.status(200).json({
             success: true,
-            bookings: mappedBookings,
+            individualBookings,
+            teamBookings,
             customerAddress: customer.address,
         });
 
@@ -1624,4 +1663,3 @@ exports.getLabourBookings = async (req, res) => {
         });
     }
 };
-
