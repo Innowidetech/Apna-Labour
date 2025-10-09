@@ -553,13 +553,15 @@ exports.getUserProfileName = async (req, res) => {
 
 exports.getUserProfile = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId; // ✅ correct key from JWT
 
         const user = await User.findById(userId).select("-password");
-        const customer = await Customer.findOne({ userId });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        if (!user || !customer)
-            return res.status(404).json({ message: "Profile not found" });
+        const customer = await Customer.findOne({ userId });
+        if (!customer) {
+            return res.status(404).json({ message: "Customer profile not found" });
+        }
 
         res.status(200).json({
             message: "Profile fetched successfully",
@@ -598,7 +600,7 @@ exports.getUserBookings = async (req, res) => {
 
 exports.getUserPayments = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         const bookings = await Booking.find({ user: userId })
             .populate("items.unit", "title price description image")
@@ -628,7 +630,7 @@ exports.getUserPayments = async (req, res) => {
 
 exports.getUserReviews = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { period } = req.query;
 
         let filter = { userId };
@@ -661,7 +663,7 @@ exports.getUserReviews = async (req, res) => {
 
 exports.getUserNotifications = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         const notifications = await Notification.find({ user: userId })
             .sort({ createdAt: -1 });
@@ -677,7 +679,7 @@ exports.getUserNotifications = async (req, res) => {
 };
 exports.deleteAccount = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         // ✅ Check if user exists
         const user = await User.findById(userId);
