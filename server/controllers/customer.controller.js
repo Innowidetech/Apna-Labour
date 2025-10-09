@@ -553,7 +553,7 @@ exports.getUserProfileName = async (req, res) => {
 
 exports.getUserProfile = async (req, res) => {
     try {
-        const userId = req.user.userId; // ✅ correct key from JWT
+        const userId = req.user.id; // ✅ correct key from JWT
 
         // Find user basic info
         const user = await User.findById(userId).select("-password");
