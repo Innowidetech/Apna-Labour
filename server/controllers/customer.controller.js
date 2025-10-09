@@ -555,24 +555,28 @@ exports.getUserProfile = async (req, res) => {
     try {
         const userId = req.user.userId; // ✅ correct key from JWT
 
+        // Find user basic info
         const user = await User.findById(userId).select("-password");
-        if (!user) return res.status(404).json({ message: "User not found" });
-
-        const customer = await Customer.findOne({ userId });
-        if (!customer) {
-            return res.status(404).json({ message: "Customer profile not found" });
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
         }
+
+        // Try to find related customer profile (optional)
+        const customer = await Customer.findOne({ userId });
+
+        // Combine details
+        const profile = {
+            name: user.name || "",
+            email: user.email || "",
+            phoneNumber: user.mobileNumber || "",
+            role: user.role,
+            picture: user.picture || "",
+            ...(customer ? customer.toObject() : {}), // merge customer details if available
+        };
 
         res.status(200).json({
             message: "Profile fetched successfully",
-            profile: {
-                ...customer.toObject(),
-                name: user.name,
-                email: user.email,
-                phoneNumber: user.mobileNumber,
-                role: user.role,
-                picture: user.picture,
-            }
+            profile,
         });
     } catch (err) {
         console.error("Get Profile Error:", err);
@@ -582,7 +586,7 @@ exports.getUserProfile = async (req, res) => {
 
 exports.getUserBookings = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         const bookings = await Booking.find({ user: userId })
             .populate("items.unit", "title price description image")
