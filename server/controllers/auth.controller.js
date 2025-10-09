@@ -17,37 +17,27 @@ exports.registerOrLogin = async (req, res) => {
         const { email, mobileNumber, idToken } = req.body;
         let user;
 
-        // -------------------------------
-        // Google Login
-        // -------------------------------
+        // 🔹 Case 1: Google Login
         if (idToken) {
             const ticket = await client.verifyIdToken({
                 idToken,
                 audience: process.env.GOOGLE_CLIENT_ID,
             });
             const payload = ticket.getPayload();
-            const { sub: googleId, email, name, picture } = payload;
+            const { sub: googleId, email } = payload;
 
-            // Find existing user by googleId or email
             user = await User.findOne({ $or: [{ googleId }, { email }] });
 
-            if (user) {
-                // Update missing fields if empty
-                if (!user.googleId) user.googleId = googleId;
-                if (!user.name) user.name = name;
-                if (!user.picture) user.picture = picture;
-                if (!user.email) user.email = email;
-                await user.save();
-            } else {
-                // Create new only if user does not exist
+            if (!user) {
                 user = new User({
-                    googleId,
                     email,
-                    name,
-                    picture,
+                    googleId,
                     role: "Customer",
                     isActive: true,
                 });
+                await user.save();
+            } else if (!user.googleId) {
+                user.googleId = googleId;
                 await user.save();
             }
 
@@ -63,35 +53,33 @@ exports.registerOrLogin = async (req, res) => {
             });
         }
 
-        // -------------------------------
-        // Mobile Number OTP Login
-        // -------------------------------
+        // 🔹 Case 2: Mobile Number OTP
         if (mobileNumber) {
-            user = await User.findOne({ $or: [{ mobileNumber }, { email }] });
+            const query = [];
+            if (mobileNumber) query.push({ mobileNumber });
+            if (email) query.push({ email });
+
+            user = query.length ? await User.findOne({ $or: query }) : null;
 
             if (!user) {
-                // Create only if not exist
                 user = new User({
                     mobileNumber,
                     role: "Customer",
                     isActive: true,
                 });
                 await user.save();
-            } else {
-                // Update mobileNumber if empty
-                if (!user.mobileNumber) {
-                    user.mobileNumber = mobileNumber;
-                    await user.save();
-                }
+            } else if (!user.mobileNumber) {
+                user.mobileNumber = mobileNumber;
+                await user.save();
             }
 
-            // Generate OTP
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             user.otp = otp;
-            user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+            user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
             await user.save();
 
-            await sendOtpToMobile(mobileNumber, `Your OTP code is ${otp}. It will expire in 5 minutes.`);
+            const message = `Your OTP code is ${otp}. It will expire in 5 minutes.`;
+            await sendOtpToMobile(mobileNumber, message);
 
             return res.status(200).json({
                 message: "OTP sent to mobile number",
@@ -99,11 +87,13 @@ exports.registerOrLogin = async (req, res) => {
             });
         }
 
-        // -------------------------------
-        // Email OTP Login
-        // -------------------------------
+        // 🔹 Case 3: Email OTP
         if (email) {
-            user = await User.findOne({ $or: [{ email }, { mobileNumber }] });
+            const query = [];
+            if (email) query.push({ email });
+            if (mobileNumber) query.push({ mobileNumber });
+
+            user = query.length ? await User.findOne({ $or: query }) : null;
 
             if (!user) {
                 user = new User({
@@ -112,17 +102,14 @@ exports.registerOrLogin = async (req, res) => {
                     isActive: true,
                 });
                 await user.save();
-            } else {
-                // Update email if empty
-                if (!user.email) {
-                    user.email = email;
-                    await user.save();
-                }
+            } else if (!user.email) {
+                user.email = email;
+                await user.save();
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             user.otp = otp;
-            user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
+            user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
             await user.save();
 
             await sendEmail(email, 'Apna Labour - OTP', otpTemplate(otp));
@@ -133,11 +120,12 @@ exports.registerOrLogin = async (req, res) => {
             });
         }
 
+        //  If none provided
         return res.status(400).json({ message: "Provide mobileNumber, email, or idToken" });
 
     } catch (err) {
         console.error("Auth error:", err);
-        res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 // controllers/authController.js
