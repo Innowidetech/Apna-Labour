@@ -26,7 +26,6 @@ exports.registerOrLogin = async (req, res) => {
             const payload = ticket.getPayload();
             const { sub: googleId, email } = payload;
 
-            // Check for any user with same googleId or email
             user = await User.findOne({
                 $or: [{ googleId }, { email }]
             });
@@ -39,12 +38,9 @@ exports.registerOrLogin = async (req, res) => {
                     isActive: true,
                 });
                 await user.save();
-            } else {
-                // If Google login happens later, attach googleId
-                if (!user.googleId) {
-                    user.googleId = googleId;
-                    await user.save();
-                }
+            } else if (!user.googleId) {
+                user.googleId = googleId;
+                await user.save();
             }
 
             const token = jwt.sign(
@@ -61,10 +57,12 @@ exports.registerOrLogin = async (req, res) => {
 
         // 🔹 Case 2: Mobile Number (OTP flow)
         if (mobileNumber) {
-            // Try to find a user by mobileNumber OR email (to prevent duplicates)
-            user = await User.findOne({
-                $or: [{ mobileNumber }, { email }]
-            });
+            // Build query dynamically
+            const query = [];
+            if (mobileNumber) query.push({ mobileNumber });
+            if (email) query.push({ email });
+
+            user = query.length ? await User.findOne({ $or: query }) : null;
 
             if (!user) {
                 user = new User({
@@ -96,9 +94,12 @@ exports.registerOrLogin = async (req, res) => {
 
         // 🔹 Case 3: Email (OTP flow)
         if (email) {
-            user = await User.findOne({
-                $or: [{ email }, { mobileNumber }]
-            });
+            // Build query dynamically
+            const query = [];
+            if (email) query.push({ email });
+            if (mobileNumber) query.push({ mobileNumber });
+
+            user = query.length ? await User.findOne({ $or: query }) : null;
 
             if (!user) {
                 user = new User({
@@ -133,6 +134,7 @@ exports.registerOrLogin = async (req, res) => {
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
+
 // controllers/authController.js
 exports.verifyOtp = async (req, res) => {
     try {
