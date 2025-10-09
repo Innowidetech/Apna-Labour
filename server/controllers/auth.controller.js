@@ -15,7 +15,6 @@ const otpTemplate = require('../utils/otpTemplate');
 exports.registerOrLogin = async (req, res) => {
     try {
         const { email, mobileNumber, idToken } = req.body;
-
         let user;
 
         // 🔹 Case 1: Google Login
@@ -27,7 +26,10 @@ exports.registerOrLogin = async (req, res) => {
             const payload = ticket.getPayload();
             const { sub: googleId, email } = payload;
 
-            user = await User.findOne({ $or: [{ googleId }, { email }] });
+            // Check for any user with same googleId or email
+            user = await User.findOne({
+                $or: [{ googleId }, { email }]
+            });
 
             if (!user) {
                 user = new User({
@@ -37,6 +39,12 @@ exports.registerOrLogin = async (req, res) => {
                     isActive: true,
                 });
                 await user.save();
+            } else {
+                // If Google login happens later, attach googleId
+                if (!user.googleId) {
+                    user.googleId = googleId;
+                    await user.save();
+                }
             }
 
             const token = jwt.sign(
@@ -53,7 +61,10 @@ exports.registerOrLogin = async (req, res) => {
 
         // 🔹 Case 2: Mobile Number (OTP flow)
         if (mobileNumber) {
-            user = await User.findOne({ mobileNumber });
+            // Try to find a user by mobileNumber OR email (to prevent duplicates)
+            user = await User.findOne({
+                $or: [{ mobileNumber }, { email }]
+            });
 
             if (!user) {
                 user = new User({
@@ -61,6 +72,9 @@ exports.registerOrLogin = async (req, res) => {
                     role: "Customer",
                     isActive: true,
                 });
+                await user.save();
+            } else if (!user.mobileNumber) {
+                user.mobileNumber = mobileNumber;
                 await user.save();
             }
 
@@ -70,6 +84,7 @@ exports.registerOrLogin = async (req, res) => {
             user.otp = otp;
             user.otpExpiry = expiryTime;
             await user.save();
+
             const message = `Your OTP code is ${otp}. It will expire in 5 minutes.`;
             await sendOtpToMobile(mobileNumber, message);
 
@@ -81,7 +96,9 @@ exports.registerOrLogin = async (req, res) => {
 
         // 🔹 Case 3: Email (OTP flow)
         if (email) {
-            user = await User.findOne({ email });
+            user = await User.findOne({
+                $or: [{ email }, { mobileNumber }]
+            });
 
             if (!user) {
                 user = new User({
@@ -89,6 +106,9 @@ exports.registerOrLogin = async (req, res) => {
                     role: "Customer",
                     isActive: true,
                 });
+                await user.save();
+            } else if (!user.email) {
+                user.email = email;
                 await user.save();
             }
 
@@ -99,7 +119,7 @@ exports.registerOrLogin = async (req, res) => {
             user.otpExpiry = expiryTime;
             await user.save();
 
-            await sendEmail(email, 'Apna Labour -  OTP', otpTemplate(otp));
+            await sendEmail(email, 'Apna Labour - OTP', otpTemplate(otp));
 
             return res.status(200).json({
                 message: "OTP sent to email",

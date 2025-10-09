@@ -551,75 +551,61 @@ exports.getUserProfileName = async (req, res) => {
     }
 };
 
-exports.getProfile = async (req, res) => {
+exports.getUserProfile = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // user details
         const user = await User.findById(userId).select("-password");
-
-        //  bookings with unit details inside items
-        const bookings = await Booking.find({ user: userId })
-            .populate("items.unit", "title price description image "); // populate unit fields
-
         const customer = await Customer.findOne({ userId });
 
-        const canceledBookings = bookings.filter(b => b.status === "Cancelled");
+        if (!user || !customer)
+            return res.status(404).json({ message: "Profile not found" });
 
-
-        let reviewFilter = { userId };
-        const { reviewPeriod } = req.query; // frontend can pass ?reviewPeriod=2025 or last30
-
-        if (reviewPeriod) {
-            if (reviewPeriod === "last30") {
-                const last30 = new Date();
-                last30.setDate(last30.getDate() - 30);
-                reviewFilter.createdAt = { $gte: last30 };
-            } else if (!isNaN(reviewPeriod)) {
-                // numeric year like 2025, 2024
-                const start = new Date(`${reviewPeriod}-01-01T00:00:00.000Z`);
-                const end = new Date(`${parseInt(reviewPeriod) + 1}-01-01T00:00:00.000Z`);
-                reviewFilter.createdAt = { $gte: start, $lt: end };
+        res.status(200).json({
+            message: "Profile fetched successfully",
+            profile: {
+                ...customer.toObject(),
+                name: user.name,
+                email: user.email,
+                phoneNumber: user.mobileNumber,
+                role: user.role,
+                picture: user.picture,
             }
-        }
+        });
+    } catch (err) {
+        console.error("Get Profile Error:", err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
 
-        //  reviews with target populated
-        const reviews = await Review.find(reviewFilter)
-            .populate({
-                path: "targetId",
-                select: "title name", // unit.title or labourer.name
-            })
+exports.getUserBookings = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const bookings = await Booking.find({ user: userId })
+            .populate("items.unit", "title price description image")
             .sort({ createdAt: -1 });
 
-        //  notifications
-        const notifications = await Notification.find({ user: userId }).sort({ createdAt: -1 });
+        res.status(200).json({
+            message: "Bookings fetched successfully",
+            bookings,
+        });
+    } catch (err) {
+        console.error("Bookings Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
 
+exports.getUserPayments = async (req, res) => {
+    try {
+        const userId = req.user.id;
 
-        const disputes = await Dispute.find({ user: userId });
+        const bookings = await Booking.find({ user: userId })
+            .populate("items.unit", "title price description image")
+            .sort({ createdAt: -1 });
 
-        //  booking items only (with unit details)
-        const bookingItems = bookings.map(b => ({
-            _id: b._id,
-            status: b.status,
-            bookingDate: b.bookingDate,
-            timeSlot: b.timeSlot,
-            items: b.items.map(item => ({
-                _id: item._id,
-                unit: item.unit,
-                quantity: item.quantity,
-                price: item.price,
-            })),
-        }));
-
-        //  payments include unit details
         const payments = bookings.map(b => ({
             _id: b._id,
-            items: b.items.map(item => ({
-                _id: item._id,
-                unit: item.unit,
-                quantity: item.quantity,
-                price: item.price,
-            })),
             totalAmount: b.totalAmount,
             paymentId: b.paymentId,
             orderId: b.orderId,
@@ -627,24 +613,66 @@ exports.getProfile = async (req, res) => {
             paymentMethod: b.paymentMethod,
             status: b.status,
             bookedAt: b.bookedAt,
+            items: b.items,
         }));
 
-        return res.status(200).json({
-            message: "Profile data fetched successfully",
-            profile: {
-                user,
-                customer,
-                bookings: bookingItems,
-                payments,
-                reviews, //  now filtered
-                notifications,
-                canceledBookings,
-
-            },
+        res.status(200).json({
+            message: "Payments fetched successfully",
+            payments,
         });
     } catch (err) {
-        console.error("Profile API Error:", err);
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        console.error("Payments Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getUserReviews = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { period } = req.query;
+
+        let filter = { userId };
+
+        if (period) {
+            if (period === "last30") {
+                const last30 = new Date();
+                last30.setDate(last30.getDate() - 30);
+                filter.createdAt = { $gte: last30 };
+            } else if (!isNaN(period)) {
+                const start = new Date(`${period}-01-01T00:00:00.000Z`);
+                const end = new Date(`${parseInt(period) + 1}-01-01T00:00:00.000Z`);
+                filter.createdAt = { $gte: start, $lt: end };
+            }
+        }
+
+        const reviews = await Review.find(filter)
+            .populate("targetId", "title name")
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            message: "Reviews fetched successfully",
+            reviews,
+        });
+    } catch (err) {
+        console.error("Reviews Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getUserNotifications = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const notifications = await Notification.find({ user: userId })
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            message: "Notifications fetched successfully",
+            notifications,
+        });
+    } catch (err) {
+        console.error("Notifications Fetch Error:", err);
+        res.status(500).json({ message: err.message });
     }
 };
 exports.deleteAccount = async (req, res) => {
@@ -692,23 +720,30 @@ exports.updateCustomerProfile = async (req, res) => {
     try {
         const updateData = {};
         const imgFile = req.file;
+
+        // 🔹 Handle image upload
         if (imgFile) {
             const uploadImage = await uploadMedia(imgFile);
-
             if (!uploadImage || !uploadImage[0]) {
                 return res.status(500).json({ message: "Image upload failed" });
             }
             updateData.image = uploadImage[0];
         }
 
-
-        // Basic fields
+        // 🔹 Basic Customer fields
         if (req.body.gender) updateData.gender = req.body.gender;
-        if (req.body.phoneNumber) updateData.phoneNumber = req.body.phoneNumber;
-        if (req.body.email) updateData.email = req.body.email;
 
-        // Address fields
-        const addressFields = ["HNo", "street", "area", "landmark", "townCity", "pincode", 'buildingName', "state"];
+        // 🔹 Address fields
+        const addressFields = [
+            "HNo",
+            "buildingName",
+            "street",
+            "area",
+            "landmark",
+            "townCity",
+            "pincode",
+            "state"
+        ];
         addressFields.forEach(field => {
             const key = `address.${field}`;
             if (req.body[key]) {
@@ -716,25 +751,42 @@ exports.updateCustomerProfile = async (req, res) => {
             }
         });
 
-        // Ensure userId is always set on insert
+        // 🔹 Update or create customer
         const customer = await Customer.findOneAndUpdate(
             { userId: req.user.id },
             { $set: { ...updateData, userId: req.user._id } },
             { new: true, upsert: true }
         );
 
-        if (req.body.name) {
-            await User.findByIdAndUpdate(
+        // 🔹 Update User table
+        const userUpdates = {};
+        if (req.body.name) userUpdates.name = req.body.name;
+        if (req.body.email) userUpdates.email = req.body.email;
+        if (req.body.phoneNumber) userUpdates.mobileNumber = req.body.phoneNumber;
+
+        let updatedUser = null;
+        if (Object.keys(userUpdates).length > 0) {
+            updatedUser = await User.findByIdAndUpdate(
                 req.user.id,
-                { $set: { name: req.body.name } },
+                { $set: userUpdates },
                 { new: true }
-            );
+            ).select("-password");
         }
 
+        // 🔹 Merge customer + user fields (no nested `user`)
+        const profile = {
+            ...customer.toObject(),
+            name: updatedUser?.name || req.user.name,
+            email: updatedUser?.email || req.user.email,
+            phoneNumber: updatedUser?.mobileNumber || req.user.mobileNumber
+        };
+
+        // 🔹 Return the merged data
         res.status(200).json({
             message: "Customer profile updated successfully",
-            customer
+            profile
         });
+
     } catch (error) {
         console.error("Update Profile Error:", error);
         res.status(500).json({ message: error.message });

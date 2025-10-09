@@ -2,15 +2,16 @@ const express = require('express');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const { protect, authorize, optionalAuth } = require('../middleware/auth.middleware');
-const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchServices, getProfile, updateCustomerProfile,
+const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchServices, getUserProfile, updateCustomerProfile,
     updateUserStatus, getCategories, getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance,
     getSpecificServicesByServiceType, getUnitsBySpecificService, createBooking, verifyPayment, markNotificationAsRead,
     markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews, cancelBooking,
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
-    createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount
+    createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount,
+    getUserBookings, getUserPayments, getUserReviews, getUserNotifications
 
 } = require('../controllers/customer.controller')
-
+ 
 const router = express.Router();
 
 // router.post('/cart', protect, addToCart);
@@ -32,7 +33,11 @@ router.get("/services/specific-services/:id", getSpecificServicesByServiceType);
 router.get("/specific-services/units/:id", getUnitsBySpecificService);
 router.get('/hero/:id', getHeroByCategory);
 
-router.get('/profile', protect, authorize('Customer'), getProfile);
+router.get('/profile', protect, authorize('Customer'), getUserProfile);
+router.get("/bookings", protect, authorize('Customer'), getUserBookings);
+router.get("/payments", protect, authorize('Customer'), getUserPayments);
+router.get("/reviews", protect, authorize('Customer'), getUserReviews);
+router.get("/notifications", protect, authorize('Customer'), getUserNotifications);
 router.delete("/delete-account", protect, authorize('Customer'), deleteAccount);
 
 router.get('/profile/name', protect, authorize('Customer'), getUserProfileName);

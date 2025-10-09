@@ -4,9 +4,7 @@ const CustomerSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
     image: { type: String }, // store image URL or file path
     gender: { type: String, enum: ['Male', 'Female'] },
-    phoneNumber: { type: String },
-    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true, match: [/\S+@\S+\.\S+/, 'Invalid email address'] },
-    address: {
+     address: {
         HNo: { type: String },
         buildingName: { type: String },
         street: { type: String },
