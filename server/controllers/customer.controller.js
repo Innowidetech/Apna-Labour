@@ -15,6 +15,10 @@ const { Category, SubCategory, AppliancesType, ServiceType, SpecificService, Uni
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
+const { formatAddress } = require('../utils/formatAddress');
+const { geocodeAddress } = require("../utils/geocodeAddress");
+const { getDistanceBetweenPoints } = require("../utils/getDistance");
+const LabourBooking = require("../models/labourBooking");
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -180,7 +184,7 @@ exports.addToCart = async (req, res) => {
                         }
                     }
                     await userCart.save();
-                    await guestCart.remove();
+                    await guestCart.deleteOne();
                 }
             }
             guestId = undefined;
@@ -225,8 +229,6 @@ exports.getCart = async (req, res) => {
         const userId = req.user ? req.user.id : null;
         let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
-        let guestId = req.headers["x-guest-id"]; //  from frontend header
-
 
         // Merge guest cart into user cart if logged in
         if (userId && guestId) {
@@ -250,7 +252,7 @@ exports.getCart = async (req, res) => {
                         }
                     }
                     await userCart.save();
-                    await guestCart.remove();
+                    await guestCart.deleteOne();
                     guestId = undefined;
                 }
             }
@@ -259,8 +261,6 @@ exports.getCart = async (req, res) => {
         const query = userId ? { user: userId } : { guestId };
 
         const cart = await Cart.findOne(query).populate("items.unit", "title image");
-
-        const cart = await Cart.findOne(query).populate("items.unit", "title image ");
 
 
         if (!cart || cart.items.length === 0) {
@@ -305,21 +305,21 @@ exports.removeFromCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.id : null;
 
-        const guestId = req.cookies.guestId;
+        // Use header guestId (like add/get) → fallback to cookie guestId
+        const guestId = req.headers["x-guest-id"] || req.cookies.guestId;
         const { unitId } = req.params;
 
+        if (!unitId) {
+            return res.status(400).json({ message: "unitId is required" });
+        }
+
+        // Select cart based on login type
         const query = userId ? { user: userId } : { guestId };
         const cart = await Cart.findOne(query);
-        if (!cart) return res.status(404).json({ message: "Cart not found" });
-        let guestId = req.headers["x-guest-id"]; //  use header like add/get cart
-        const { unitId } = req.params;
 
-        if (!unitId) return res.status(400).json({ message: "unitId is required" });
-
-        // Determine which cart to use
-        const query = userId ? { user: userId } : { guestId };
-        const cart = await Cart.findOne(query);
-        if (!cart) return res.status(404).json({ message: "Cart not found" });
+        if (!cart) {
+            return res.status(404).json({ message: "Cart not found" });
+        }
 
         // Remove the item
         cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
@@ -328,7 +328,7 @@ exports.removeFromCart = async (req, res) => {
         return res.status(200).json({
             message: "Item removed from cart",
             cart,
-            guestId: guestId || undefined, // return guestId if it's a guest cart
+            guestId: !userId ? guestId : undefined, // only return guestId for guest carts
         });
     } catch (err) {
         return res.status(500).json({
@@ -338,130 +338,130 @@ exports.removeFromCart = async (req, res) => {
     }
 };
 
-exports.addToCartItem = async (req, res) => {
-    try {
-        const userId = req.user ? req.user.id : null;
-        let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
+// exports.addToCartItem = async (req, res) => {
+//     try {
+//         const userId = req.user ? req.user.id : null;
+//         let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
 
-        // Generate guestId if not logged in and not provided
-        if (!userId && !guestId) guestId = uuid();
+//         // Generate guestId if not logged in and not provided
+//         if (!userId && !guestId) guestId = uuid();
 
-        const { unitId } = req.params;
-        const { quantity } = req.body;
+//         const { unitId } = req.params;
+//         const { quantity } = req.body;
 
-        if (!unitId) return res.status(400).json({ message: "unitId is required" });
+//         if (!unitId) return res.status(400).json({ message: "unitId is required" });
 
-        const unit = await Unit.findById(unitId);
-        if (!unit) return res.status(404).json({ message: "Unit not found" });
+//         const unit = await Unit.findById(unitId);
+//         if (!unit) return res.status(404).json({ message: "Unit not found" });
 
-        // Calculate final price (consider discount)
-        let finalPrice = unit.price;
-        if (unit.discountedPercentage) {
-            finalPrice -= (unit.price * unit.discountedPercentage) / 100;
-        }
+//         // Calculate final price (consider discount)
+//         let finalPrice = unit.price;
+//         if (unit.discountedPercentage) {
+//             finalPrice -= (unit.price * unit.discountedPercentage) / 100;
+//         }
 
-        // Guest → User cart merge if logged in
-        if (userId && guestId) {
-            const guestCart = await Cart.findOne({ guestId });
-            if (guestCart) {
-                let userCart = await Cart.findOne({ user: userId });
-                if (!userCart) {
-                    guestCart.user = userId;
-                    guestCart.guestId = undefined;
-                    await guestCart.save();
-                } else {
-                    // Merge items
-                    for (const item of guestCart.items) {
-                        const index = userCart.items.findIndex(i => i.unit.toString() === item.unit.toString());
-                        if (index > -1) {
-                            userCart.items[index].quantity += item.quantity;
-                        } else {
-                            userCart.items.push(item);
-                        }
-                    }
-                    await userCart.save();
-                    await guestCart.remove();
-                }
-            }
-            guestId = undefined;
-        }
+//         // Guest → User cart merge if logged in
+//         if (userId && guestId) {
+//             const guestCart = await Cart.findOne({ guestId });
+//             if (guestCart) {
+//                 let userCart = await Cart.findOne({ user: userId });
+//                 if (!userCart) {
+//                     guestCart.user = userId;
+//                     guestCart.guestId = undefined;
+//                     await guestCart.save();
+//                 } else {
+//                     // Merge items
+//                     for (const item of guestCart.items) {
+//                         const index = userCart.items.findIndex(i => i.unit.toString() === item.unit.toString());
+//                         if (index > -1) {
+//                             userCart.items[index].quantity += item.quantity;
+//                         } else {
+//                             userCart.items.push(item);
+//                         }
+//                     }
+//                     await userCart.save();
+//                     await guestCart.remove();
+//                 }
+//             }
+//             guestId = undefined;
+//         }
 
-        // Find or create cart
-        const query = userId ? { user: userId } : { guestId };
-        let cart = await Cart.findOne(query);
-        if (!cart) {
-            cart = new Cart({
-                user: userId || undefined,
-                guestId: userId ? undefined : guestId,
-                items: [{ unit: unitId, quantity: quantity || 1, price: finalPrice }],
-            });
-        } else {
-            // Increase quantity if unit exists
-            const itemIndex = cart.items.findIndex(item => item.unit.toString() === unitId);
-            if (itemIndex > -1) {
-                cart.items[itemIndex].quantity += quantity || 1;
-            } else {
-                cart.items.push({ unit: unitId, quantity: quantity || 1, price: finalPrice });
-            }
-        }
-
-
-        cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
-        await cart.save();
-
-        return res.status(200).json({ message: "Item removed from cart", cart });
-
-        return res.status(200).json({
-            message: "Item added to cart",
-            cart,
-            guestId: guestId || undefined,
-        });
-
-    } catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message });
-    }
-};
+//         // Find or create cart
+//         const query = userId ? { user: userId } : { guestId };
+//         let cart = await Cart.findOne(query);
+//         if (!cart) {
+//             cart = new Cart({
+//                 user: userId || undefined,
+//                 guestId: userId ? undefined : guestId,
+//                 items: [{ unit: unitId, quantity: quantity || 1, price: finalPrice }],
+//             });
+//         } else {
+//             // Increase quantity if unit exists
+//             const itemIndex = cart.items.findIndex(item => item.unit.toString() === unitId);
+//             if (itemIndex > -1) {
+//                 cart.items[itemIndex].quantity += quantity || 1;
+//             } else {
+//                 cart.items.push({ unit: unitId, quantity: quantity || 1, price: finalPrice });
+//             }
+//         }
 
 
-exports.bookService = async (req, res) => {
-    try {
-        const { customerId, serviceId, date, location, price } = req.body;
+//         cart.items = cart.items.filter(item => item.unit.toString() !== unitId);
+//         await cart.save();
 
-        const booking = new Booking({
-            customerId,
-            serviceId,
-            date,
-            location,
-            price,
-            labourerId: null // assigned later by Admin/matching system
-        });
+//         return res.status(200).json({ message: "Item removed from cart", cart });
 
-        await booking.save();
-        res.status(201).json({ success: true, booking });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+//         return res.status(200).json({
+//             message: "Item added to cart",
+//             cart,
+//             guestId: guestId || undefined,
+//         });
 
-exports.bookLabourer = async (req, res) => {
-    try {
-        const { customerId, labourerId, serviceId, date, location, price } = req.body;
+//     } catch (err) {
+//         return res.status(500).json({ message: "Internal server error", error: err.message });
+//     }
+// };
 
-        const booking = new Booking({
-            customerId,
-            labourerId,
-            serviceId,
-            date,
-            location,
-            price
-        });
 
-        await booking.save();
-        res.status(201).json({ success: true, booking });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+// exports.bookService = async (req, res) => {
+//     try {
+//         const { customerId, serviceId, date, location, price } = req.body;
+
+//         const booking = new Booking({
+//             customerId,
+//             serviceId,
+//             date,
+//             location,
+//             price,
+//             labourerId: null // assigned later by Admin/matching system
+//         });
+
+//         await booking.save();
+//         res.status(201).json({ success: true, booking });
+//     } catch (error) {
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
+// exports.bookLabourer = async (req, res) => {
+//     try {
+//         const { customerId, labourerId, serviceId, date, location, price } = req.body;
+
+//         const booking = new Booking({
+//             customerId,
+//             labourerId,
+//             serviceId,
+//             date,
+//             location,
+//             price
+//         });
+
+//         await booking.save();
+//         res.status(201).json({ success: true, booking });
+//     } catch (error) {
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
 
 exports.searchServices = async (req, res) => {
     try {
@@ -507,76 +507,111 @@ exports.searchServices = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
-
-exports.getProfile = async (req, res) => {
+exports.getUserProfileName = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // user details
-        const user = await User.findById(userId).select("-password");
+        // 1️⃣ Fetch base user info (including _id)
+        const user = await User.findById(userId).select(
+            "_id name email mobileNumber role isActive"
+        );
 
-        //  bookings with unit details inside items
-        const bookings = await Booking.find({ user: userId })
-            .populate("items.unit", "title price description image "); // populate unit fields
-
-        const customer = await Customer.findOne({ userId });
-
-        const canceledBookings = bookings.filter(b => b.status === "Cancelled");
-
-
-        let reviewFilter = { userId };
-        const { reviewPeriod } = req.query; // frontend can pass ?reviewPeriod=2025 or last30
-
-        if (reviewPeriod) {
-            if (reviewPeriod === "last30") {
-                const last30 = new Date();
-                last30.setDate(last30.getDate() - 30);
-                reviewFilter.createdAt = { $gte: last30 };
-            } else if (!isNaN(reviewPeriod)) {
-                // numeric year like 2025, 2024
-                const start = new Date(`${reviewPeriod}-01-01T00:00:00.000Z`);
-                const end = new Date(`${parseInt(reviewPeriod) + 1}-01-01T00:00:00.000Z`);
-                reviewFilter.createdAt = { $gte: start, $lt: end };
-            }
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
         }
 
-        //  reviews with target populated
-        const reviews = await Review.find(reviewFilter)
-            .populate({
-                path: "targetId",
-                select: "title name", // unit.title or labourer.name
-            })
+        // 2️⃣ Fetch customer address
+        const customer = await Customer.findOne({ userId }).select("address");
+
+        // 3️⃣ Fetch latest booking details
+        const latestBooking = await Booking.findOne({ user: userId })
+            .sort({ createdAt: -1 })
+            .select("bookingDate timeSlot");
+
+        // 4️⃣ Build response object
+        const profile = {
+            user,
+            address: customer ? customer.address : null,
+            booking: latestBooking
+                ? {
+                    bookingDate: latestBooking.bookingDate,
+                    timeSlot: latestBooking.timeSlot,
+                }
+                : null,
+        };
+
+        // ✅ Send response
+        res.status(200).json({
+            message: "Profile data fetched successfully",
+            profile,
+        });
+    } catch (error) {
+        console.error("Error fetching profile:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+exports.getUserProfile = async (req, res) => {
+    try {
+        const userId = req.user.id; // ✅ correct key from JWT
+
+        // Find user basic info
+        const user = await User.findById(userId).select("-password");
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Try to find related customer profile (optional)
+        const customer = await Customer.findOne({ userId });
+
+        // Combine details
+        const profile = {
+            name: user.name || "",
+            email: user.email || "",
+            phoneNumber: user.mobileNumber || "",
+            role: user.role,
+            picture: user.picture || "",
+            ...(customer ? customer.toObject() : {}), // merge customer details if available
+        };
+
+        res.status(200).json({
+            message: "Profile fetched successfully",
+            profile,
+        });
+    } catch (err) {
+        console.error("Get Profile Error:", err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+exports.getUserBookings = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        const bookings = await Booking.find({ user: userId })
+            .populate("items.unit", "title price description image")
             .sort({ createdAt: -1 });
 
-        //  notifications
-        const notifications = await Notification.find({ user: userId }).sort({ createdAt: -1 });
+        res.status(200).json({
+            message: "Bookings fetched successfully",
+            bookings,
+        });
+    } catch (err) {
+        console.error("Bookings Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
 
+exports.getUserPayments = async (req, res) => {
+    try {
+        const userId = req.user.userId;
 
-        const disputes = await Dispute.find({ user: userId });
+        const bookings = await Booking.find({ user: userId })
+            .populate("items.unit", "title price description image")
+            .sort({ createdAt: -1 });
 
-        //  booking items only (with unit details)
-        const bookingItems = bookings.map(b => ({
-            _id: b._id,
-            status: b.status,
-            bookingDate: b.bookingDate,
-            timeSlot: b.timeSlot,
-            items: b.items.map(item => ({
-                _id: item._id,
-                unit: item.unit,
-                quantity: item.quantity,
-                price: item.price,
-            })),
-        }));
-
-        //  payments include unit details
         const payments = bookings.map(b => ({
             _id: b._id,
-            items: b.items.map(item => ({
-                _id: item._id,
-                unit: item.unit,
-                quantity: item.quantity,
-                price: item.price,
-            })),
             totalAmount: b.totalAmount,
             paymentId: b.paymentId,
             orderId: b.orderId,
@@ -584,24 +619,104 @@ exports.getProfile = async (req, res) => {
             paymentMethod: b.paymentMethod,
             status: b.status,
             bookedAt: b.bookedAt,
+            items: b.items,
         }));
 
-        return res.status(200).json({
-            message: "Profile data fetched successfully",
-            profile: {
-                user,
-                customer,
-                bookings: bookingItems,
-                payments,
-                reviews, //  now filtered
-                notifications,
-                canceledBookings,
-
-            },
+        res.status(200).json({
+            message: "Payments fetched successfully",
+            payments,
         });
     } catch (err) {
-        console.error("Profile API Error:", err);
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        console.error("Payments Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getUserReviews = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { period } = req.query;
+
+        let filter = { userId };
+
+        if (period) {
+            if (period === "last30") {
+                const last30 = new Date();
+                last30.setDate(last30.getDate() - 30);
+                filter.createdAt = { $gte: last30 };
+            } else if (!isNaN(period)) {
+                const start = new Date(`${period}-01-01T00:00:00.000Z`);
+                const end = new Date(`${parseInt(period) + 1}-01-01T00:00:00.000Z`);
+                filter.createdAt = { $gte: start, $lt: end };
+            }
+        }
+
+        const reviews = await Review.find(filter)
+            .populate("targetId", "title name")
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            message: "Reviews fetched successfully",
+            reviews,
+        });
+    } catch (err) {
+        console.error("Reviews Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
+exports.getUserNotifications = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        const notifications = await Notification.find({ user: userId })
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            message: "Notifications fetched successfully",
+            notifications,
+        });
+    } catch (err) {
+        console.error("Notifications Fetch Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
+exports.deleteAccount = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+
+        // ✅ Check if user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // ⚠️ Optional: Soft delete (if you want to keep record)
+        // user.isDeleted = true;
+        // await user.save();
+
+        // 🧹 Delete related data
+        await Promise.all([
+            Customer.deleteOne({ userId }),
+            Booking.deleteMany({ user: userId }),
+            Review.deleteMany({ userId }),
+            Notification.deleteMany({ user: userId }),
+            Dispute.deleteMany({ user: userId }),
+        ]);
+
+        // 🗑️ Finally delete user
+        await User.findByIdAndDelete(userId);
+
+        return res.status(200).json({
+            message: "Account deleted successfully",
+            success: true,
+        });
+    } catch (err) {
+        console.error("Delete Account Error:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
@@ -611,23 +726,30 @@ exports.updateCustomerProfile = async (req, res) => {
     try {
         const updateData = {};
         const imgFile = req.file;
+
+        // 🔹 Handle image upload
         if (imgFile) {
             const uploadImage = await uploadMedia(imgFile);
-
             if (!uploadImage || !uploadImage[0]) {
                 return res.status(500).json({ message: "Image upload failed" });
             }
             updateData.image = uploadImage[0];
         }
 
-
-        // Basic fields
+        // 🔹 Basic Customer fields
         if (req.body.gender) updateData.gender = req.body.gender;
-        if (req.body.phoneNumber) updateData.phoneNumber = req.body.phoneNumber;
-        if (req.body.email) updateData.email = req.body.email;
 
-        // Address fields
-        const addressFields = ["HNo", "street", "area", "landmark", "townCity", "pincode", "state"];
+        // 🔹 Address fields
+        const addressFields = [
+            "HNo",
+            "buildingName",
+            "street",
+            "area",
+            "landmark",
+            "townCity",
+            "pincode",
+            "state"
+        ];
         addressFields.forEach(field => {
             const key = `address.${field}`;
             if (req.body[key]) {
@@ -635,25 +757,42 @@ exports.updateCustomerProfile = async (req, res) => {
             }
         });
 
-        // Ensure userId is always set on insert
+        // 🔹 Update or create customer
         const customer = await Customer.findOneAndUpdate(
             { userId: req.user.id },
             { $set: { ...updateData, userId: req.user._id } },
             { new: true, upsert: true }
         );
 
-        if (req.body.name) {
-            await User.findByIdAndUpdate(
+        // 🔹 Update User table
+        const userUpdates = {};
+        if (req.body.name) userUpdates.name = req.body.name;
+        if (req.body.email) userUpdates.email = req.body.email;
+        if (req.body.phoneNumber) userUpdates.mobileNumber = req.body.phoneNumber;
+
+        let updatedUser = null;
+        if (Object.keys(userUpdates).length > 0) {
+            updatedUser = await User.findByIdAndUpdate(
                 req.user.id,
-                { $set: { name: req.body.name } },
+                { $set: userUpdates },
                 { new: true }
-            );
+            ).select("-password");
         }
 
+        // 🔹 Merge customer + user fields (no nested `user`)
+        const profile = {
+            ...customer.toObject(),
+            name: updatedUser?.name || req.user.name,
+            email: updatedUser?.email || req.user.email,
+            phoneNumber: updatedUser?.mobileNumber || req.user.mobileNumber
+        };
+
+        // 🔹 Return the merged data
         res.status(200).json({
             message: "Customer profile updated successfully",
-            customer
+            profile
         });
+
     } catch (error) {
         console.error("Update Profile Error:", error);
         res.status(500).json({ message: error.message });
@@ -662,25 +801,25 @@ exports.updateCustomerProfile = async (req, res) => {
 
 exports.updateUserStatus = async (req, res) => {
     try {
-        const { id } = req.params;
+        const userId = req.user.id; // ✅ get from auth middleware
 
-        // Find the user first
-        const user = await User.findById(id);
+        // Find the user
+        const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        // Flip the status
+        // Flip active/inactive status
         user.isActive = !user.isActive;
         await user.save();
 
-        res.json({
+        return res.status(200).json({
             message: `User ${user.isActive ? "activated" : "deactivated"} successfully`,
             user,
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Something went wrong" });
+        console.error("Update User Status Error:", error);
+        return res.status(500).json({ message: "Something went wrong", error: error.message });
     }
 };
 //  Get all Categories
@@ -827,84 +966,6 @@ exports.getUnitsBySpecificService = async (req, res) => {
     }
 };
 
-
-exports.createBooking = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const { bookingDate, timeSlot, paymentMethod, tip = 0 } = req.body;
-
-        // Check address
-        const customer = await Customer.findOne({ userId });
-        if (!customer || !customer.address || !customer.address.HNo) {
-            return res
-                .status(400)
-                .json({ message: "Please add your address before proceeding with booking" });
-        }
-
-        // Get Cart
-        const cart = await Cart.findOne({ user: userId }).populate("items.unit");
-        if (!cart || cart.items.length === 0) {
-            return res.status(400).json({ message: "Cart is empty" });
-        }
-
-        // Calculate amounts
-        let subtotal = 0;
-        cart.items.forEach((item) => {
-            subtotal += item.price * item.quantity;
-        });
-
-        const tax = subtotal * 0.1; // 10% tax
-        const totalAmount = subtotal + tax + tip;
-
-        // If Razorpay → create order
-        if (paymentMethod === "Razorpay") {
-            const order = await razorpay.orders.create({
-                amount: Math.round(totalAmount * 100), // paise
-                currency: "INR",
-                receipt: `receipt_${Date.now()}`,
-            });
-
-            return res.status(200).json({
-                success: true,
-                message: "Razorpay order created",
-                orderId: order.id,
-                amount: totalAmount,
-                currency: "INR",
-            });
-        }
-
-        // If COD → save booking directly
-        const booking = new Booking({
-            user: userId,
-            items: cart.items,
-            subtotal,
-            tax,
-            tip,
-            totalAmount,
-            bookingDate,
-            timeSlot,
-            status: "Pending",
-            paymentMethod: "COD",
-        });
-
-        await booking.save();
-
-        // Clear cart
-        cart.items = [];
-        await cart.save();
-
-        return res.status(201).json({
-            message: "Booking created successfully with COD",
-            booking,
-        });
-    } catch (err) {
-        console.error("Booking Error:", err);
-        return res
-            .status(500)
-            .json({ message: "Internal server error", error: err.message });
-    }
-};
-
 exports.getHeroByCategory = async (req, res) => {
     try {
         const { id } = req.params;
@@ -923,75 +984,190 @@ exports.getHeroByCategory = async (req, res) => {
     }
 };
 
-
-exports.verifyPayment = async (req, res) => {
+exports.saveSlot = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { orderId, paymentId, signature, bookingDate, timeSlot, tip = 0 } =
-            req.body;
+        const { bookingDate, timeSlot } = req.body;
 
-        // Verify signature
-        // const body = orderId + "|" + paymentId;
-        // const expectedSignature = crypto
-        //     .createHmac("sha256", process.env.RAZORPAY_SECRET_KEY)
-        //     .update(body.toString())
-        //     .digest("hex");
+        // ✅ Validate input
+        if (!bookingDate || !timeSlot) {
+            return res.status(400).json({ message: "Booking date and time slot are required" });
+        }
 
-        // if (expectedSignature !== signature) {
-        //     return res.status(400).json({ message: "Invalid payment signature" });
-        // }
+        // ✅ Check if the user already has a pending booking (to attach slot to)
+        let booking = await Booking.findOne({ user: userId, status: "Pending" });
 
-        // Get Cart
+        if (!booking) {
+            // If no pending booking exists, create one with only slot details
+            booking = new Booking({
+                user: userId,
+                items: [], // will be filled later
+                subtotal: 0,
+                tax: 0,
+                totalAmount: 0,
+                bookingDate,
+                timeSlot,
+                paymentMethod: "COD", // temporary or default
+            });
+        } else {
+            // If booking already exists, just update slot details
+            booking.bookingDate = bookingDate;
+            booking.timeSlot = timeSlot;
+        }
+
+        await booking.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Booking slot saved successfully",
+            booking,
+        });
+    } catch (err) {
+        console.error("Slot Save Error:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
+    }
+};
+exports.createBooking = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { tip = 0, paymentMethod } = req.body;
+
+        // ✅ Only COD allowed
+        if (paymentMethod !== "COD") {
+            return res.status(400).json({ message: "Only COD payment method is supported" });
+        }
+
+        // ✅ Find existing pending booking (with saved date/time)
+        const booking = await Booking.findOne({ user: userId, status: "Pending" });
+        if (!booking) {
+            return res.status(404).json({
+                message: "No pending booking found. Please select a booking date and time first.",
+            });
+        }
+
+        // ✅ Get customer's address
+        const customer = await Customer.findOne({ userId });
+        if (!customer || !customer.address || !customer.address.HNo) {
+            return res.status(400).json({
+                message: "Please add your address before proceeding with booking",
+            });
+        }
+
+        // ✅ Get user's cart
         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
         if (!cart || cart.items.length === 0) {
             return res.status(400).json({ message: "Cart is empty" });
         }
 
-        // Get customer for address
-        const customer = await Customer.findOne({ userId });
-
-        // Calculate amounts again
+        // ✅ Calculate prices
         let subtotal = 0;
         cart.items.forEach((item) => {
             subtotal += item.price * item.quantity;
         });
 
-        const tax = subtotal * 0.1;
+        const tax = subtotal * 0.1; // 10% GST
         const totalAmount = subtotal + tax + tip;
 
-        // Save booking
-        const booking = new Booking({
-            user: userId,
-            items: cart.items,
-            subtotal,
-            tax,
-            tip,
-            totalAmount,
-            bookingDate,
-            timeSlot,
-            status: "Confirmed",
-            paymentMethod: "Razorpay",
-            paymentId,
-            orderId,
-            signature,
-        });
+        // ✅ Update existing booking
+        booking.items = cart.items;
+        booking.subtotal = subtotal;
+        booking.tax = tax;
+        booking.tip = tip;
+        booking.totalAmount = totalAmount;
+        booking.paymentMethod = "COD";
+        booking.status = "Confirmed";
 
         await booking.save();
 
-        // Clear cart
+        // ✅ Clear cart after booking
         cart.items = [];
         await cart.save();
 
-        return res
-            .status(201)
-            .json({ message: "Booking confirmed successfully", booking });
+        return res.status(200).json({
+            success: true,
+            message: "Booking finalized successfully with COD",
+            booking,
+        });
     } catch (err) {
-        console.error("Verify Payment Error:", err);
-        return res
-            .status(500)
-            .json({ message: "Internal server error", error: err.message });
+        console.error("Booking Error:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
+
+// exports.verifyPayment = async (req, res) => {
+//     try {
+//         const userId = req.user.id;
+//         const { orderId, paymentId, signature, bookingDate, timeSlot, tip = 0 } =
+//             req.body;
+
+//         // Verify signature
+//         // const body = orderId + "|" + paymentId;
+//         // const expectedSignature = crypto
+//         //     .createHmac("sha256", process.env.RAZORPAY_SECRET_KEY)
+//         //     .update(body.toString())
+//         //     .digest("hex");
+
+//         // if (expectedSignature !== signature) {
+//         //     return res.status(400).json({ message: "Invalid payment signature" });
+//         // }
+
+//         // Get Cart
+//         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
+//         if (!cart || cart.items.length === 0) {
+//             return res.status(400).json({ message: "Cart is empty" });
+//         }
+
+//         // Get customer for address
+//         const customer = await Customer.findOne({ userId });
+
+//         // Calculate amounts again
+//         let subtotal = 0;
+//         cart.items.forEach((item) => {
+//             subtotal += item.price * item.quantity;
+//         });
+
+//         const tax = subtotal * 0.1;
+//         const totalAmount = subtotal + tax + tip;
+
+//         // Save booking
+//         const booking = new Booking({
+//             user: userId,
+//             items: cart.items,
+//             subtotal,
+//             tax,
+//             tip,
+//             totalAmount,
+//             bookingDate,
+//             timeSlot,
+//             status: "Confirmed",
+//             paymentMethod: "Razorpay",
+//             paymentId,
+//             orderId,
+//             signature,
+//         });
+
+//         await booking.save();
+
+//         // Clear cart
+//         cart.items = [];
+//         await cart.save();
+
+//         return res
+//             .status(201)
+//             .json({ message: "Booking confirmed successfully", booking });
+//     } catch (err) {
+//         console.error("Verify Payment Error:", err);
+//         return res
+//             .status(500)
+//             .json({ message: "Internal server error", error: err.message });
+//     }
+// };
 
 
 exports.markNotificationAsRead = async (req, res) => {
@@ -1080,6 +1256,37 @@ exports.addUnitReview = async (req, res) => {
         const review = new Review({
             targetType: "Unit",
             targetId: unitId,
+            userId,
+            rating,
+            feedback,
+        });
+
+        await review.save();
+        return res.status(201).json({ message: "Review added successfully", review });
+    } catch (err) {
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
+exports.addLabourerReview = async (req, res) => {
+    try {
+        const userId = req.user.id; // from auth middleware
+        const { labourerId } = req.params;
+        const { rating, feedback } = req.body;
+
+        // Validate labourer exists
+        const labourer = await Labourer.findById(labourerId);
+        if (!labourer) return res.status(404).json({ message: "Labourer not found" });
+
+        // Check if user already reviewed this labourer
+        const existingReview = await Review.findOne({ userId, targetId: labourerId, targetType: "Labourer" });
+        if (existingReview) {
+            return res.status(400).json({ message: "You already reviewed this labourer" });
+        }
+
+        const review = new Review({
+            targetType: "Labourer",
+            targetId: labourerId,
             userId,
             rating,
             feedback,
@@ -1209,52 +1416,308 @@ exports.getSpecificServiceDetails = async (req, res) => {
     }
 };
 
-
-exports.cancelBooking = async (req, res) => {
+exports.getSpecificLabourDetails = async (req, res) => {
     try {
-        const bookingId = req.params.id;
-        const userId = req.user.id;
+        const { id } = req.params;
 
-        console.log("Cancel Booking:", { bookingId, userId });
-
-        const { reason, comments, refund } = req.body;
-
-        const booking = await Booking.findById(bookingId);
-        if (!booking) {
-            return res.status(404).json({ message: "Booking not found" });
+        const labour = await Labourer.findById(id);
+        if (!labour) {
+            return res.status(404).json({ message: "Labourer not found" });
         }
 
-        if (booking.status === "Cancelled") {
-            return res.status(400).json({ message: "Booking is already cancelled" });
-        }
+        // Get all reviews for this labourer and populate user name/email
+        const reviews = await Review.find({
+            targetType: "Labourer",
+            targetId: labour._id,
+        }).populate("userId", "name email");
 
-        const existingCancellation = await Cancellation.findOne({ bookingId });
-        if (existingCancellation) {
-            return res.status(400).json({ message: "Booking already cancelled" });
-        }
-
-        //  Create cancellation record
-        await Cancellation.create({
-            bookingId,
-            userId,
-            reason,
-            comments,
-            refund,
+        // Count reviews by star
+        const starCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        reviews.forEach(r => {
+            if (r.rating >= 1 && r.rating <= 5) starCounts[r.rating]++;
         });
 
-        //  Update booking status safely
-        booking.status = "Cancelled";
-        await booking.save();
+        const totalReviews = reviews.length;
+        const averageRating =
+            totalReviews > 0
+                ? reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews
+                : 0;
 
-        return res.status(201).json({
-            message: "Booking cancelled successfully",
-            booking,
+        return res.status(200).json({
+            ...labour.toObject(),
+            totalReviews,
+            averageRating: Number(averageRating.toFixed(1)),
+            starCounts,
+            reviews: reviews.map(r => ({
+                id: r._id,
+                user: r.userId ? (r.userId.name || r.userId.email) : "Anonymous",
+                rating: r.rating,
+                comment: r.feedback,
+                date: r.date || r.createdAt
+            }))
         });
+
     } catch (err) {
-        console.error("Cancel Booking Error:", err);
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+        console.error("Error fetching labour details:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message
+        });
     }
 };
 
+exports.getLabourersByType = async (req, res) => {
+    try {
+        const { type } = req.params;
+        const userId = req.user?.id;
 
+        if (!["Individual", "Team"].includes(type)) {
+            return res.status(400).json({ success: false, message: "Invalid labourer type" });
+        }
 
+        // 🔹 Get all accepted labourers by type
+        const labourers = await Labourer.find({ registrationType: type, status: "Accepted" })
+            .populate("userId", "name email mobileNumber");
+
+        // 🔹 Get reviews
+        const reviews = await Review.find({
+            targetId: { $in: labourers.map(l => l._id) },
+            targetType: "Labourer",
+        });
+
+        const reviewMap = {};
+        reviews.forEach(r => {
+            if (!reviewMap[r.targetId]) reviewMap[r.targetId] = [];
+            reviewMap[r.targetId].push(r);
+        });
+
+        // 🔹 Prepare mapped data
+        const mappedLabourers = labourers.map(labour => {
+            const labourReviews = reviewMap[labour._id] || [];
+            const totalReviews = labourReviews.length;
+            const avgRating =
+                totalReviews > 0
+                    ? (labourReviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
+                    : 0;
+
+            return {
+                _id: labour._id,
+                userId: labour.userId?._id,
+                name: labour.userId?.name,
+                email: labour.userId?.email,
+                mobileNumber: labour.userId?.mobileNumber,
+                distance: "0 km", // No distance calculation
+                image: labour.image,
+                skill: labour.skill,
+                experience: labour.experience,
+                cost: labour.cost,
+                isAvailable: labour.isAvailable,
+                averageRating: Number(avgRating),
+                totalReviews,
+                ...(type === "Team" && { teamName: labour.teamName || "Team" }),
+            };
+        });
+
+        res.json({ success: true, labourers: mappedLabourers });
+    } catch (error) {
+        console.error("Error fetching labourers by type:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+exports.createLabourBooking = async (req, res) => {
+    try {
+        const {
+            labourer: labourerId,
+            startDate,
+            endDate,
+            numberOfWorkers,
+            workLocation,
+            purpose,
+        } = req.body;
+
+        const UserId = req.user?.id;
+
+        // 1️⃣ Check labourer exists
+        const labourer = await Labourer.findById(labourerId);
+        if (!labourer) {
+            return res.status(404).json({ success: false, message: "Labourer not found" });
+        }
+
+        // 2️⃣ Determine labour type
+        const labourType = labourer.registrationType; // "Individual" or "Team"
+
+        const bookingData = {
+            UserId: UserId,
+            labourer: labourerId,
+            labourType,
+            startDate,
+            endDate,
+            status: "Pending",
+        };
+
+        // 3️⃣ Validate required fields
+        if (labourType === "Individual") {
+            if (!startDate || !endDate) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Start date and end date are required for Individual labour booking",
+                });
+            }
+        } else if (labourType === "Team") {
+            if (!numberOfWorkers || !workLocation || !purpose || !startDate || !endDate) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Number of workers, work location, purpose, start date and end date are required for Team labour booking",
+                });
+            }
+            bookingData.numberOfWorkers = numberOfWorkers;
+            bookingData.workLocation = workLocation;
+            bookingData.purpose = purpose;
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: `Invalid registration type: ${labourer.registrationType}`,
+            });
+        }
+
+        // 4️⃣ Calculate totalDays, dailyRate, serviceFees, tax, totalAmount
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+        let dailyRate = 0;
+        let serviceFees = 0;
+        let tax = 0;
+        let totalAmount = 0;
+
+        if (labourType === "Individual") {
+            const ratePerDay = labourer.cost || 0;
+            dailyRate = ratePerDay;
+            serviceFees = Math.round(ratePerDay * totalDays * 0.1); // 10% service fee
+            tax = Math.round((ratePerDay * totalDays + serviceFees) * 0.10); // 18% tax
+            totalAmount = ratePerDay * totalDays + serviceFees + tax;
+        } else if (labourType === "Team") {
+            const ratePerLabour = labourer.cost || 0;
+            dailyRate = ratePerLabour * numberOfWorkers;
+            serviceFees = Math.round(dailyRate * totalDays * 0.1);
+            tax = Math.round((dailyRate * totalDays + serviceFees) * 0.10);
+            totalAmount = dailyRate * totalDays + serviceFees + tax;
+        }
+
+        // 5️⃣ Add cost details to bookingData
+        bookingData.totalDays = totalDays;
+        bookingData.dailyRate = dailyRate;
+        bookingData.serviceFees = serviceFees;
+        bookingData.tax = tax;
+        bookingData.totalCost = totalAmount;
+
+        // 6️⃣ Create booking
+        const booking = await LabourBooking.create(bookingData);
+
+        res.status(201).json({
+            success: true,
+            booking,
+            costBreakdown: {
+                totalDays,
+                dailyRate,
+                serviceFees,
+                tax,
+                totalAmount,
+            },
+        });
+    } catch (error) {
+        console.error("Error creating labour booking:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+exports.getLabourBookings = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+
+        // ✅ Fetch customer info (address only)
+        const customer = await Customer.findOne({ userId }).select("address");
+        if (!customer) {
+            return res.status(404).json({ success: false, message: "Customer profile not found" });
+        }
+
+        // ✅ Fetch all bookings made by this user
+        const bookings = await LabourBooking.find({ UserId: userId })
+            .populate({
+                path: "labourer",
+                select: "registrationType skill teamName cost image experience address"
+            })
+            .sort({ createdAt: -1 });
+
+        // ✅ Prepare individual & team bookings separately
+        const individualBookings = [];
+        const teamBookings = [];
+
+        bookings.forEach((b) => {
+            const start = new Date(b.startDate);
+            const end = new Date(b.endDate);
+            const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+            const numberOfWorkers = b.numberOfWorkers || 1;
+            const baseCost = b.labourer?.cost || 0;
+            const dailyRate =
+                b.labourType === "Team" ? baseCost * numberOfWorkers : baseCost;
+
+            const serviceFees = Math.round(dailyRate * totalDays * 0.1);
+            const tax = Math.round((dailyRate * totalDays + serviceFees) * 0.18);
+            const totalAmount = dailyRate * totalDays + serviceFees + tax;
+
+            const bookingData = {
+                bookingId: b.bookingId,
+                labourType: b.labourType,
+                startDate: b.startDate,
+                endDate: b.endDate,
+                numberOfWorkers: b.numberOfWorkers,
+                workLocation: b.workLocation,
+                purpose: b.purpose,
+                status: b.status,
+                totalDays,
+                dailyRate,
+                serviceFees,
+                tax,
+                totalAmount,
+                labourer: {
+                    id: b.labourer?._id,
+                    skill: b.labourer?.skill,
+                    teamName: b.labourer?.teamName,
+                    cost: b.labourer?.cost,
+                    image: b.labourer?.image,
+                    experience: b.labourer?.experience,
+                    address: b.labourer?.address,
+                },
+            };
+
+            if (b.labourType === "Individual") {
+                individualBookings.push(bookingData);
+            } else if (b.labourType === "Team") {
+                teamBookings.push(bookingData);
+            }
+        });
+
+        // ✅ Final response
+        res.status(200).json({
+            success: true,
+            individualBookings,
+            teamBookings,
+            customerAddress: customer.address,
+        });
+
+    } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
+    }
+};

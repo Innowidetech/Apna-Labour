@@ -14,11 +14,13 @@ const razorpay = new Razorpay({
 exports.createPaymentOrder = async (req, res) => {
     try {
         const { bookingId } = req.body;
+        const userId = req.user.id; // 🔹 Save user ID
+
         const booking = await Booking.findById(bookingId);
         if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
 
         const options = {
-            amount: booking.price * 100,
+            amount: booking.totalAmount * 100, // 🔹 totalAmount in paise
             currency: "INR",
             receipt: `receipt_${booking._id}`
         };
@@ -26,11 +28,13 @@ exports.createPaymentOrder = async (req, res) => {
         const order = await razorpay.orders.create(options);
 
         const payment = new Payment({
+            userId,                    // 🔹 Save user ID
             bookingId,
-            customerId: booking.customerId,
-            amount: booking.price,
+            customerId: booking.user,  // Assuming booking.user is the customer
+            amount: booking.totalAmount,
             orderId: order.id
         });
+
         await payment.save();
 
         res.status(201).json({ success: true, order });
@@ -47,9 +51,9 @@ exports.verifyPayment = async (req, res) => {
         const payment = await Payment.findOne({ orderId });
         if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
 
-        // ✅ Proper signature verification
+        // 🔹 Signature verification
         const expectedSignature = crypto
-            .createHmac("sha256", process.env.RAZORPAY_SECRET)
+            .createHmac("sha256", process.env.RAZORPAY_SECRET_KEY)
             .update(orderId + "|" + paymentId)
             .digest("hex");
 
@@ -57,6 +61,7 @@ exports.verifyPayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid payment signature" });
         }
 
+        // 🔹 Update payment and booking
         payment.paymentId = paymentId;
         payment.signature = signature;
         payment.status = "paid";
@@ -64,7 +69,7 @@ exports.verifyPayment = async (req, res) => {
 
         await Booking.findByIdAndUpdate(payment.bookingId, {
             paymentStatus: "paid",
-            status: "confirmed"
+            status: "Confirmed"
         });
 
         res.json({ success: true, message: "Payment verified successfully" });

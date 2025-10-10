@@ -4,7 +4,7 @@ const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrain
     createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
-    createHeroAppliance
+    createHeroAppliance,markTrainingCompleted
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -36,6 +36,7 @@ router.delete('/service-type/:id', protect, authorize('Admin'), delServiceType);
 
 router.get('/labourers', protect, authorize('Admin'), getAllLabourers);
 router.patch('/accept-applicant/:id', protect, authorize('Admin'), acceptApplicant);
+router.patch('/training-completed/:id', protect, authorize('Admin'), markTrainingCompleted);
 router.get('/labourers/accepted', protect, authorize('Admin'), getAcceptedLabourers);
 
 router.get("/contacts", protect, authorize("Admin"), getContacts);

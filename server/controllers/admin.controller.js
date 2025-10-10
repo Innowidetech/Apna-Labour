@@ -478,15 +478,19 @@ exports.acceptApplicant = async (req, res) => {
     try {
         const applicantId = req.params.id;
 
+        // 1️⃣ Find the labourer
         const labourer = await Labourer.findById(applicantId);
         if (!labourer) {
             return res.status(404).json({ message: 'Applicant not found.' });
         }
 
-        labourer.isAccepted = true;
+        // 2️⃣ Update status to Accepted
+        labourer.status = 'Accepted';
+        // Optionally, you can update trainingStatus or isAvailable if needed
+        labourer.isAvailable = true; // make them available upon acceptance
         await labourer.save();
 
-        // Promote user role to 'Labourer'
+        // 3️⃣ Update user role to 'Labourer' (if not already)
         const user = await User.findById(labourer.userId);
         if (user) {
             user.role = 'Labourer';
@@ -503,9 +507,46 @@ exports.acceptApplicant = async (req, res) => {
     }
 };
 
+exports.markTrainingCompleted = async (req, res) => {
+    try {
+        const labourerId = req.params.id;
+        const { cost, experience } = req.body; // optional fields
+
+        // Find the labourer
+        const labourer = await Labourer.findById(labourerId);
+        if (!labourer) {
+            return res.status(404).json({ message: 'Labourer not found.' });
+        }
+
+        // Update training status
+        labourer.trainingStatus = 'Completed';
+
+        // Optional: update cost and experience
+        if (cost !== undefined) labourer.cost = cost;
+        if (experience !== undefined) labourer.experience = experience;
+
+        await labourer.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Training marked as completed successfully.',
+            labourer
+        });
+
+    } catch (error) {
+        console.error('Error marking training completed:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
+        });
+    }
+};
+
+
 exports.getAcceptedLabourers = async (req, res) => {
     try {
-        const labourers = await Labourer.find({ isAccepted: true })
+        const labourers = await Labourer.find({ status: 'Accepted' })
             .populate('userId', 'name email mobileNumber')
             .populate('category', 'title');
 

@@ -19,8 +19,8 @@ const bookingSchema = new mongoose.Schema(
         totalAmount: { type: Number, required: true },
 
         // Booking details
-        bookingDate: { type: Date, required: true },
-        timeSlot: { type: String, required: true }, // e.g., "8:00 AM - 9:00 AM"
+        bookingDate: { type: Date },
+        timeSlot: { type: String }, // e.g., "8:00 AM - 9:00 AM"
 
 
         status: {

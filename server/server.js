@@ -10,6 +10,7 @@ const labourerRouter = require('./routes/labourer.route');
 const customerRouter = require('./routes/customer.route');
 const userRouter = require('./routes/user.router');
 const landingPageRouter = require('./routes/landingPages.route');
+const paymentRouter = require('./routes/payment.routes');
 
 const app = express();
 app.use(cookieParser());
@@ -21,17 +22,18 @@ const allowedOrigins = [
   "https://apnalabour.vercel.app",
   "https://apnalabor.web.app"
 ];
+
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin) || !origin) {
-        // allow requests with no origin (like Postman)
+      // Allow requests with no origin (Postman, curl) or if origin is in the whitelist
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        callback(new Error(`CORS error: Origin ${origin} not allowed`));
       }
     },
-    credentials: true, // 👈 this allows cookies (guestId) to be sent
+    credentials: true, // allows cookies (guestId) to be sent
   })
 );
 
@@ -41,6 +43,7 @@ app.use('/api/labourer', labourerRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/user', userRouter);
 app.use('/api/services', landingPageRouter);
+app.use('/api/payment', paymentRouter);
 
 
 mongoose.connect(process.env.MONGODB_URL)
