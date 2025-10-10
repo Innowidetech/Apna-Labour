@@ -10,6 +10,7 @@ const Payment = require("../models/Payment");
 const Review = require("../models/Review");
 const Notification = require("../models/Notification");
 const Dispute = require("../models/Dispute");
+const HelpCenter = require("../models/HelpCenter");
 const Cancellation = require("../models/Cancellation");
 const { Category, SubCategory, AppliancesType, ServiceType, SpecificService, Unit, HeroSection } = require("../models/Services");
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
@@ -19,6 +20,7 @@ const { formatAddress } = require('../utils/formatAddress');
 const { geocodeAddress } = require("../utils/geocodeAddress");
 const { getDistanceBetweenPoints } = require("../utils/getDistance");
 const LabourBooking = require("../models/labourBooking");
+
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -1719,5 +1721,14 @@ exports.getLabourBookings = async (req, res) => {
             message: "Server error",
             error: error.message,
         });
+    }
+};
+
+exports.getAllHelpCenters = async (req, res) => {
+    try {
+        const helpCenters = await HelpCenter.find();
+        res.json(helpCenters);
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };

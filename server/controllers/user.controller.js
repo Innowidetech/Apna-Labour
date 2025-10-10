@@ -1,9 +1,9 @@
 const Services = require('../models/Services');
 
-exports.getServices = async (req,res) => {
+exports.getServices = async (req, res) => {
     try {
         const services = await Services.find().populate('subCategories.serviceTypes.reviews.userId');
-        if(!services){return res.status(404).json({message:"No services yet"})}
+        if (!services) { return res.status(404).json({ message: "No services yet" }) }
 
         res.status(200).json(services)
     } catch (err) {

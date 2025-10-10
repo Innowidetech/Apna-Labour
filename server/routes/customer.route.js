@@ -8,10 +8,10 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
     markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews, cancelBooking,
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
     createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount,
-    getUserBookings, getUserPayments, getUserReviews, getUserNotifications
+    getUserBookings, getUserPayments, getUserReviews, getUserNotifications, getAllHelpCenters
 
 } = require('../controllers/customer.controller')
- 
+
 const router = express.Router();
 
 // router.post('/cart', protect, addToCart);
@@ -67,6 +67,6 @@ router.get('/labourers/type/:type', optionalAuth, getLabourersByType);
 router.post('/labour-booking', protect, authorize('Customer'), createLabourBooking);
 router.get('/labour-booking/my-bookings', protect, authorize('Customer'), getLabourBookings);
 
-
+router.get("/accordian", protect, getAllHelpCenters);
 module.exports = router;
 

@@ -9,6 +9,7 @@ const { addRevokedToken } = require('../utils/tokens');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const { sendEmail } = require('../utils/nodemailer');
 const otpTemplate = require('../utils/otpTemplate');
+const HelpCenter = require('../models/HelpCenter');
 
 
 

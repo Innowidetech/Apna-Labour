@@ -7,6 +7,7 @@ const Contact = require('../models/Contact');
 const Notification = require('../models/Notification');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
+const HelpCenter = require('../models/HelpCenter');
 
 const {
     Category,
@@ -643,4 +644,41 @@ exports.createHeroAppliance = async (req, res) => {
         });
     }
 };
+
+exports.createHelpCenter = async (req, res) => {
+    try {
+        const { heading, accordions } = req.body;
+
+        // Check if heading already exists
+        let existing = await HelpCenter.findOne({ heading });
+
+        if (existing) {
+            existing.accordions.push(...accordions);
+            await existing.save();
+            return res.json({
+                message: "Accordion(s) added to existing Help Center heading",
+                data: existing
+            });
+        }
+
+        const helpCenter = await HelpCenter.create({
+            heading,
+            accordions,
+            createdBy: req.user?._id || null
+        });
+
+        res.status(201).json({
+            message: "Help Center section created successfully",
+            data: helpCenter
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+
+
+
+
+
 
