@@ -15,7 +15,6 @@ const otpTemplate = require('../utils/otpTemplate');
 exports.registerOrLogin = async (req, res) => {
     try {
         const { email, mobileNumber, idToken } = req.body;
-
         let user;
 
         // 🔹 Case 1: Google Login
@@ -37,6 +36,9 @@ exports.registerOrLogin = async (req, res) => {
                     isActive: true,
                 });
                 await user.save();
+            } else if (!user.googleId) {
+                user.googleId = googleId;
+                await user.save();
             }
 
             const token = jwt.sign(
@@ -51,9 +53,13 @@ exports.registerOrLogin = async (req, res) => {
             });
         }
 
-        // 🔹 Case 2: Mobile Number (OTP flow)
+        // 🔹 Case 2: Mobile Number OTP
         if (mobileNumber) {
-            user = await User.findOne({ mobileNumber });
+            const query = [];
+            if (mobileNumber) query.push({ mobileNumber });
+            if (email) query.push({ email });
+
+            user = query.length ? await User.findOne({ $or: query }) : null;
 
             if (!user) {
                 user = new User({
@@ -62,14 +68,16 @@ exports.registerOrLogin = async (req, res) => {
                     isActive: true,
                 });
                 await user.save();
+            } else if (!user.mobileNumber) {
+                user.mobileNumber = mobileNumber;
+                await user.save();
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
-
             user.otp = otp;
-            user.otpExpiry = expiryTime;
+            user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
             await user.save();
+
             const message = `Your OTP code is ${otp}. It will expire in 5 minutes.`;
             await sendOtpToMobile(mobileNumber, message);
 
@@ -79,9 +87,13 @@ exports.registerOrLogin = async (req, res) => {
             });
         }
 
-        // 🔹 Case 3: Email (OTP flow)
+        // 🔹 Case 3: Email OTP
         if (email) {
-            user = await User.findOne({ email });
+            const query = [];
+            if (email) query.push({ email });
+            if (mobileNumber) query.push({ mobileNumber });
+
+            user = query.length ? await User.findOne({ $or: query }) : null;
 
             if (!user) {
                 user = new User({
@@ -90,16 +102,17 @@ exports.registerOrLogin = async (req, res) => {
                     isActive: true,
                 });
                 await user.save();
+            } else if (!user.email) {
+                user.email = email;
+                await user.save();
             }
 
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
-
             user.otp = otp;
-            user.otpExpiry = expiryTime;
+            user.otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
             await user.save();
 
-            await sendEmail(email, 'Apna Labour -  OTP', otpTemplate(otp));
+            await sendEmail(email, 'Apna Labour - OTP', otpTemplate(otp));
 
             return res.status(200).json({
                 message: "OTP sent to email",
@@ -107,10 +120,12 @@ exports.registerOrLogin = async (req, res) => {
             });
         }
 
+        //  If none provided
         return res.status(400).json({ message: "Provide mobileNumber, email, or idToken" });
+
     } catch (err) {
         console.error("Auth error:", err);
-        res.status(500).json({ message: "Internal server error", error: err.message });
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };
 // controllers/authController.js

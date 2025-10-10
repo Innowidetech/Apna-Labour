@@ -38,10 +38,11 @@ exports.registerLabourer = async (req, res) => {
             message,
             address,
             serviceCity,
-            category
+            category, // only for Professional
+            skill      // only for Individual or Team
         } = req.body;
 
-        // ✅ 1. Check if email or mobile already exists
+        // 1️⃣ Check if email or mobile already exists
         const existingUser = await User.findOne({
             $or: [{ email }, { mobileNumber }]
         });
@@ -50,8 +51,7 @@ exports.registerLabourer = async (req, res) => {
             return res.status(400).json({ message: 'Email or mobile number already registered' });
         }
 
-
-        // ✅ 3. Create User
+        // 2️⃣ Create User
         const user = await User.create({
             name,
             email,
@@ -59,17 +59,35 @@ exports.registerLabourer = async (req, res) => {
             role: 'Labourer'
         });
 
-        // ✅ 4. Create Labourer linked to user
-        const labourer = await Labourer.create({
+        // 3️⃣ Prepare Labourer data
+        const labourerData = {
             userId: user._id,
             registrationType,
             subject,
             message,
             address,
             serviceCity,
-            category,
             status: 'Pending'
-        });
+        };
+
+        // 4️⃣ Conditional fields based on registrationType
+        if (registrationType === 'Professional') {
+            if (!category) {
+                return res.status(400).json({ message: 'Category is required for Professional labourers' });
+            }
+            labourerData.category = category;
+        } else if (registrationType === 'Individual' || registrationType === 'Team') {
+            if (!skill) {
+                return res.status(400).json({ message: 'Skill is required for Individual or Team labourers' });
+            }
+            labourerData.skill = skill;
+            if (registrationType === 'Team') {
+                labourerData.teamName = 'Team'; // default team name
+            }
+        }
+
+        // 5️⃣ Create Labourer
+        const labourer = await Labourer.create(labourerData);
 
         return res.status(201).json({
             success: true,
@@ -87,6 +105,7 @@ exports.registerLabourer = async (req, res) => {
         });
     }
 };
+
 
 exports.createContact = async (req, res) => {
     try {
