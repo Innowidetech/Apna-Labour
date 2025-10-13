@@ -149,7 +149,7 @@ exports.createOrAddReview = async (req, res) => {
 
 exports.addToCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.userId  : null;
+        const userId = req.user ? req.user.userId : null;
         let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
 
         // Create guestId if not logged in
@@ -232,7 +232,7 @@ exports.addToCart = async (req, res) => {
 
 exports.getCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.userId  : null;
+        const userId = req.user ? req.user.userId : null;
         let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
 
@@ -309,7 +309,7 @@ exports.getCart = async (req, res) => {
 
 exports.removeFromCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.userId  : null;
+        const userId = req.user ? req.user.userId : null;
 
         // Use header guestId (like add/get) → fallback to cookie guestId
         const guestId = req.headers["x-guest-id"] || req.cookies.guestId;
@@ -643,7 +643,7 @@ exports.getUserReviews = async (req, res) => {
         const userId = req.user.userId; // from protect middleware
         const { period } = req.query;
 
-        // ✅ Convert userId to ObjectId for filtering
+        // Convert userId to ObjectId for filtering
         const filter = { userId: new mongoose.Types.ObjectId(userId) };
 
         // Optional period filter
@@ -661,7 +661,7 @@ exports.getUserReviews = async (req, res) => {
         }
 
         const reviews = await Review.find(filter)
-            .populate("targetId", "title name")
+            .populate("targetId", "title name image") // ✅ include image
             .sort({ createdAt: -1 });
 
         res.status(200).json({
@@ -768,8 +768,8 @@ exports.updateCustomerProfile = async (req, res) => {
 
         // 🔹 Update or create customer
         const customer = await Customer.findOneAndUpdate(
-            { userId: req.user.id },
-            { $set: { ...updateData, userId: req.user._id } },
+            { userId: req.user.userId  },
+            { $set: { ...updateData, userId: req.user.userId  } },
             { new: true, upsert: true }
         );
 
@@ -782,7 +782,7 @@ exports.updateCustomerProfile = async (req, res) => {
         let updatedUser = null;
         if (Object.keys(userUpdates).length > 0) {
             updatedUser = await User.findByIdAndUpdate(
-                req.user.id,
+                req.user.userId ,
                 { $set: userUpdates },
                 { new: true }
             ).select("-password");

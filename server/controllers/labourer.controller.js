@@ -3,6 +3,7 @@ const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
 const TrainingDetails = require('../models/TrainingDetails');
 const Contact = require('../models/Contact');
+const TeamMember = require('../models/TeamMember');
 
 
 const bcrypt = require('bcryptjs');
@@ -135,40 +136,39 @@ exports.createContact = async (req, res) => {
 };
 
 exports.addTeamMember = async (req, res) => {
-  try {
-    // Temporarily accept userId from body
-    const { userId, name, language, experience, mobileNumber } = req.body;
+    try {
+        // Accept labourerId (normal _id of the Labourer) from body
+        const { labourerId, name, language, experience, mobileNumber } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ message: "userId is required" });
+        if (!labourerId) {
+            return res.status(400).json({ message: "labourerId is required" });
+        }
+
+        // Find the Labourer by _id
+        const leader = await Labourer.findById(labourerId);
+        if (!leader) {
+            return res.status(404).json({ message: "Labourer not found" });
+        }
+
+        // Only Team registrationType can add members
+        if (leader.registrationType !== "Team") {
+            return res.status(403).json({ message: "Only team leaders can add members" });
+        }
+
+        // Create Team Member linked to this Labourer
+        const member = await TeamMember.create({
+            teamLeader: leader._id,
+            name,
+            language,
+            experience,
+            mobileNumber
+        });
+
+        res.status(201).json({
+            message: "Team member added successfully",
+            data: member
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
     }
-
-    // Find the Labourer by userId
-    const leader = await Labourer.findOne({ userId });
-    if (!leader) {
-      return res.status(404).json({ message: "Labourer not found" });
-    }
-
-    // Only Team registrationType can add members
-    if (leader.registrationType !== "Team") {
-      return res.status(403).json({ message: "Only team leaders can add members" });
-    }
-
-    // Create Team Member linked to this Labourer
-    const member = await TeamMember.create({
-      teamLeader: leader._id,
-      name,
-      language,
-      experience,
-      mobileNumber
-    });
-
-    res.status(201).json({
-      message: "Team member added successfully",
-      data: member
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
 };
-
