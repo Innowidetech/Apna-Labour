@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const User = require('../models/User');
 const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
@@ -12,6 +13,9 @@ const Notification = require("../models/Notification");
 const Dispute = require("../models/Dispute");
 const HelpCenter = require("../models/HelpCenter");
 const Cancellation = require("../models/Cancellation");
+const Refund = require("../models/Refund");
+
+
 const { Category, SubCategory, AppliancesType, ServiceType, SpecificService, Unit, HeroSection } = require("../models/Services");
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
 const Razorpay = require("razorpay");
@@ -31,7 +35,7 @@ const razorpay = new Razorpay({
 exports.createOrAddReview = async (req, res) => {
     try {
         const { targetType, targetId, rating, feedback } = req.body;
-        const userId = req.user._id;
+        const userId = req.user.userId;
 
         if (!targetType || !targetId || !rating) {
             return res.status(400).json({ message: "Please provide all the details" })
@@ -55,7 +59,7 @@ exports.createOrAddReview = async (req, res) => {
 
 // exports.addToCart = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const { unitId, quantity } = req.body;
 
 //         if (!unitId) return res.status(400).json({ message: "unitId is required" });
@@ -94,7 +98,7 @@ exports.createOrAddReview = async (req, res) => {
 
 // exports.removeFromCart = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const { unitId } = req.params; // this is the Unit _id
 
 //         const cart = await Cart.findOne({ user: userId });
@@ -117,7 +121,7 @@ exports.createOrAddReview = async (req, res) => {
 
 // exports.getCart = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
 
 //         if (!cart || cart.items.length === 0) {
@@ -145,7 +149,7 @@ exports.createOrAddReview = async (req, res) => {
 
 exports.addToCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.id : null;
+        const userId = req.user ? req.user.userId  : null;
         let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
 
         // Create guestId if not logged in
@@ -228,7 +232,7 @@ exports.addToCart = async (req, res) => {
 
 exports.getCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.id : null;
+        const userId = req.user ? req.user.userId  : null;
         let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
 
@@ -305,7 +309,7 @@ exports.getCart = async (req, res) => {
 
 exports.removeFromCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.id : null;
+        const userId = req.user ? req.user.userId  : null;
 
         // Use header guestId (like add/get) → fallback to cookie guestId
         const guestId = req.headers["x-guest-id"] || req.cookies.guestId;
@@ -511,7 +515,7 @@ exports.searchServices = async (req, res) => {
 };
 exports.getUserProfileName = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         // 1️⃣ Fetch base user info (including _id)
         const user = await User.findById(userId).select(
@@ -555,7 +559,7 @@ exports.getUserProfileName = async (req, res) => {
 
 exports.getUserProfile = async (req, res) => {
     try {
-        const userId = req.user.id; // ✅ correct key from JWT
+        const userId = req.user.userId; // ✅ correct key from JWT
 
         // Find user basic info
         const user = await User.findById(userId).select("-password");
@@ -636,19 +640,22 @@ exports.getUserPayments = async (req, res) => {
 
 exports.getUserReviews = async (req, res) => {
     try {
-        const userId = req.user.userId;
+        const userId = req.user.userId; // from protect middleware
         const { period } = req.query;
 
-        let filter = { userId };
+        // ✅ Convert userId to ObjectId for filtering
+        const filter = { userId: new mongoose.Types.ObjectId(userId) };
 
+        // Optional period filter
         if (period) {
             if (period === "last30") {
                 const last30 = new Date();
                 last30.setDate(last30.getDate() - 30);
                 filter.createdAt = { $gte: last30 };
             } else if (!isNaN(period)) {
-                const start = new Date(`${period}-01-01T00:00:00.000Z`);
-                const end = new Date(`${parseInt(period) + 1}-01-01T00:00:00.000Z`);
+                const year = parseInt(period);
+                const start = new Date(`${year}-01-01T00:00:00.000Z`);
+                const end = new Date(`${year + 1}-01-01T00:00:00.000Z`);
                 filter.createdAt = { $gte: start, $lt: end };
             }
         }
@@ -803,7 +810,7 @@ exports.updateCustomerProfile = async (req, res) => {
 
 exports.updateUserStatus = async (req, res) => {
     try {
-        const userId = req.user.id; // ✅ get from auth middleware
+        const userId = req.user.userId; // ✅ get from auth middleware
 
         // Find the user
         const user = await User.findById(userId);
@@ -988,7 +995,8 @@ exports.getHeroByCategory = async (req, res) => {
 
 exports.saveSlot = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user ? req.user.userId : null;
+        let guestId = req.headers["x-guest-id"]; // from frontend header
         const { bookingDate, timeSlot } = req.body;
 
         // ✅ Validate input
@@ -996,23 +1004,45 @@ exports.saveSlot = async (req, res) => {
             return res.status(400).json({ message: "Booking date and time slot are required" });
         }
 
-        // ✅ Check if the user already has a pending booking (to attach slot to)
-        let booking = await Booking.findOne({ user: userId, status: "Pending" });
+        // Get cart
+        const cartQuery = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(cartQuery).populate("items.unit");
+
+        if (!cart || cart.items.length === 0) {
+            return res.status(400).json({ message: "Your cart is empty" });
+        }
+
+        // Check if a pending booking exists
+        let booking = userId
+            ? await Booking.findOne({ user: userId, status: "Pending" })
+            : null;
+
+        const mappedItems = cart.items.map((item) => ({
+            unit: item.unit._id,
+            quantity: item.quantity,
+            price: item.price,
+        }));
+
+        const subtotal = cart.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
         if (!booking) {
-            // If no pending booking exists, create one with only slot details
+            // Create new booking
             booking = new Booking({
-                user: userId,
-                items: [], // will be filled later
-                subtotal: 0,
+                user: userId, // required for logged-in users
+                items: mappedItems,
+                subtotal,
                 tax: 0,
-                totalAmount: 0,
+                tip: 0,
+                totalAmount: subtotal,
                 bookingDate,
                 timeSlot,
-                paymentMethod: "COD", // temporary or default
+                paymentMethod: "COD",
             });
         } else {
-            // If booking already exists, just update slot details
+            // Update existing booking
+            booking.items = mappedItems;
+            booking.subtotal = subtotal;
+            booking.totalAmount = subtotal;
             booking.bookingDate = bookingDate;
             booking.timeSlot = timeSlot;
         }
@@ -1032,9 +1062,10 @@ exports.saveSlot = async (req, res) => {
         });
     }
 };
+
 exports.createBooking = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { tip = 0, paymentMethod } = req.body;
 
         // ✅ Only COD allowed
@@ -1104,7 +1135,7 @@ exports.createBooking = async (req, res) => {
 
 // exports.verifyPayment = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const { orderId, paymentId, signature, bookingDate, timeSlot, tip = 0 } =
 //             req.body;
 
@@ -1175,7 +1206,7 @@ exports.createBooking = async (req, res) => {
 exports.markNotificationAsRead = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
 
         const notification = await Notification.findOneAndUpdate(
             { _id: id, user: userId },   // ✅ ensures user can update only his own
@@ -1199,7 +1230,7 @@ exports.markNotificationAsRead = async (req, res) => {
 //  Mark all notifications as read
 exports.markAllNotificationsAsRead = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         const result = await Notification.updateMany(
             { user: userId, read: false },
@@ -1218,7 +1249,7 @@ exports.markAllNotificationsAsRead = async (req, res) => {
 exports.deleteNotification = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
 
         const notification = await Notification.findOneAndDelete({
             _id: id,
@@ -1241,7 +1272,7 @@ exports.deleteNotification = async (req, res) => {
 // Add a Review for a Unit
 exports.addUnitReview = async (req, res) => {
     try {
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
         const { unitId } = req.params;
         const { rating, feedback } = req.body;
 
@@ -1272,7 +1303,7 @@ exports.addUnitReview = async (req, res) => {
 
 exports.addLabourerReview = async (req, res) => {
     try {
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
         const { labourerId } = req.params;
         const { rating, feedback } = req.body;
 
@@ -1305,7 +1336,7 @@ exports.addLabourerReview = async (req, res) => {
 //  Edit a Review for a Unit
 exports.editUnitReview = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { reviewId } = req.params;
         const { rating, feedback } = req.body;
 
@@ -1325,7 +1356,7 @@ exports.editUnitReview = async (req, res) => {
 
 exports.deleteUnitReview = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { reviewId } = req.params;
 
         const review = await Review.findOneAndDelete({ _id: reviewId, userId, targetType: "Unit" });
@@ -1732,3 +1763,86 @@ exports.getAllHelpCenters = async (req, res) => {
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
+
+exports.getHelpCenterByHeading = async (req, res) => {
+    try {
+        const { heading } = req.params;
+
+        // Case-insensitive search using regex
+        const helpCenter = await HelpCenter.findOne({
+            heading: { $regex: new RegExp(`^${heading}$`, "i") }
+        });
+
+        if (!helpCenter) {
+            return res.status(404).json({ message: "Help Center section not found" });
+        }
+
+        res.json({
+            message: "Help Center section fetched successfully",
+            data: helpCenter
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+exports.createRefundRequest = async (req, res) => {
+    try {
+        const { userId, bookingId, reason, message, refund } = req.body;
+
+        const refundRequest = await Refund.create({
+            userId,
+            bookingId,
+            reason,
+            message,
+            refund
+        });
+
+        res.status(201).json({
+            message: "Refund request created successfully",
+            data: refundRequest
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Internal Server Error",
+            error: error.message
+        });
+    }
+};
+
+exports.cancelBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { reason } = req.body;
+
+        if (!reason) {
+            return res.status(400).json({ message: "Cancellation reason is required" });
+        }
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
+        }
+
+        if (booking.status === "Cancelled") {
+            return res.status(400).json({ message: "Booking is already cancelled" });
+        }
+
+        // Update status and reason
+        booking.status = "Cancelled";
+        booking.cancellation = {
+            reason,
+            cancelledAt: new Date()
+        };
+
+        await booking.save();
+
+        res.json({
+            message: "Booking cancelled successfully",
+            booking
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+

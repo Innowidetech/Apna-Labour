@@ -5,11 +5,11 @@ const { protect, authorize, optionalAuth } = require('../middleware/auth.middlew
 const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchServices, getUserProfile, updateCustomerProfile,
     updateUserStatus, getCategories, getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance,
     getSpecificServicesByServiceType, getUnitsBySpecificService, createBooking, verifyPayment, markNotificationAsRead,
-    markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews, cancelBooking,
+    markAllNotificationsAsRead, addUnitReview, editUnitReview, deleteUnitReview, getUnitReviews,
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
     createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount,
-    getUserBookings, getUserPayments, getUserReviews, getUserNotifications, getAllHelpCenters
-
+    getUserBookings, getUserPayments, getUserReviews, getUserNotifications, getAllHelpCenters, getHelpCenterByHeading,
+    createRefundRequest, cancelBooking
 } = require('../controllers/customer.controller')
 
 const router = express.Router();
@@ -68,5 +68,9 @@ router.post('/labour-booking', protect, authorize('Customer'), createLabourBooki
 router.get('/labour-booking/my-bookings', protect, authorize('Customer'), getLabourBookings);
 
 router.get("/accordian", protect, getAllHelpCenters);
+router.get('/get-help-center/:heading', getHelpCenterByHeading);
+router.put("/cancel/:bookingId", protect, cancelBooking);
+router.post("/refund/create", protect, createRefundRequest);
+
 module.exports = router;
 

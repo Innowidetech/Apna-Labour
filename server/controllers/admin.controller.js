@@ -404,6 +404,102 @@ exports.createUnit = async (req, res) => {
     }
 };
 
+exports.updateUnit = async (req, res) => {
+    try {
+        const { unitId } = req.params;
+        const { title, price, discountedPercentage, specificService } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        // 1️⃣ Find the Unit
+        const existingUnit = await Unit.findById(unitId);
+        if (!existingUnit) {
+            return res.status(404).json({ message: "Unit not found" });
+        }
+
+        // 2️⃣ If specificService is changing, validate new one exists
+        if (specificService && specificService !== String(existingUnit.specificService)) {
+            const newSpecificService = await SpecificService.findById(specificService);
+            if (!newSpecificService) {
+                return res.status(404).json({ message: "New SpecificService not found" });
+            }
+
+            // 3️⃣ Check for duplicate title in the new SpecificService
+            if (title) {
+                const duplicate = await Unit.findOne({
+                    title,
+                    specificService,
+                    _id: { $ne: unitId },
+                });
+                if (duplicate) {
+                    return res.status(409).json({
+                        message: "A unit with this title already exists under the selected SpecificService",
+                    });
+                }
+            }
+        }
+
+        // 4️⃣ Upload image if provided
+        let updatedImage = existingUnit.image;
+        if (imgFile) {
+            const uploadImage = await uploadMedia(imgFile);
+            if (!uploadImage || !uploadImage[0]) {
+                return res.status(500).json({ message: "Image upload failed" });
+            }
+            updatedImage = uploadImage[0];
+        }
+
+        // 5️⃣ Apply updates
+        existingUnit.title = title || existingUnit.title;
+        existingUnit.price = price ? Number(price) : existingUnit.price;
+        existingUnit.discountedPercentage = discountedPercentage
+            ? Number(discountedPercentage)
+            : existingUnit.discountedPercentage;
+        existingUnit.specificService = specificService || existingUnit.specificService;
+        existingUnit.image = updatedImage;
+
+        // 6️⃣ Save updated document
+        await existingUnit.save();
+
+        return res.status(200).json({
+            message: "Unit updated successfully",
+            unit: existingUnit,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
+    }
+};
+
+exports.deleteUnit = async (req, res) => {
+    try {
+        const { unitId } = req.params;
+
+        // 1️⃣ Check if Unit exists
+        const existingUnit = await Unit.findById(unitId);
+        if (!existingUnit) {
+            return res.status(404).json({ message: "Unit not found" });
+        }
+
+        // 2️ (Optional) Delete image from Cloudinary if applicable
+        //  Only do this if you stored public_id or have a deleteMedia util
+        // Example:
+         await deleteMedia(existingUnit.image);
+
+        await Unit.findByIdAndDelete(unitId);
+
+        return res.status(200).json({
+            message: "Unit deleted successfully",
+        });
+    } catch (err) {
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
+    }
+};
+
 
 exports.createHeroSection = async (req, res) => {
     try {

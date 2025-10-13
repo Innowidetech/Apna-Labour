@@ -133,3 +133,42 @@ exports.createContact = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
+
+exports.addTeamMember = async (req, res) => {
+  try {
+    // Temporarily accept userId from body
+    const { userId, name, language, experience, mobileNumber } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "userId is required" });
+    }
+
+    // Find the Labourer by userId
+    const leader = await Labourer.findOne({ userId });
+    if (!leader) {
+      return res.status(404).json({ message: "Labourer not found" });
+    }
+
+    // Only Team registrationType can add members
+    if (leader.registrationType !== "Team") {
+      return res.status(403).json({ message: "Only team leaders can add members" });
+    }
+
+    // Create Team Member linked to this Labourer
+    const member = await TeamMember.create({
+      teamLeader: leader._id,
+      name,
+      language,
+      experience,
+      mobileNumber
+    });
+
+    res.status(201).json({
+      message: "Team member added successfully",
+      data: member
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
