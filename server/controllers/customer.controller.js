@@ -1896,6 +1896,14 @@ exports.createRefundRequest = async (req, res) => {
             });
         }
 
+        const existingRefund = await Refund.findOne({ userId, bookingId });
+        if (existingRefund) {
+            return res.status(400).json({
+                message: "A refund request for this booking already exists",
+                data: existingRefund,
+            });
+        }
+
         const refundRequest = await Refund.create({
             userId,
             bookingId,
