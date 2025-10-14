@@ -1886,24 +1886,32 @@ exports.getHelpCenterByHeading = async (req, res) => {
 
 exports.createRefundRequest = async (req, res) => {
     try {
-        const { userId, bookingId, reason, message, refund } = req.body;
+        const userId = req.user.userId;        // from auth middleware
+        const bookingId = req.params.id;       // from URL param
+        const { message, refund } = req.body;  // from frontend
+
+        if (!refund || !refund.mode) {
+            return res.status(400).json({
+                message: "Refund mode is required",
+            });
+        }
 
         const refundRequest = await Refund.create({
             userId,
             bookingId,
-            reason,
             message,
-            refund
+            refund,
         });
 
         res.status(201).json({
             message: "Refund request created successfully",
-            data: refundRequest
+            data: refundRequest,
         });
     } catch (error) {
+        console.error("Refund Creation Error:", error);
         res.status(500).json({
             message: "Internal Server Error",
-            error: error.message
+            error: error.message,
         });
     }
 };

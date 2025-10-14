@@ -71,7 +71,7 @@ router.get('/labour-booking/my-bookings', protect, authorize('Customer'), getLab
 router.get("/accordian", protect, getAllHelpCenters);
 router.get('/get-help-center/:heading', getHelpCenterByHeading);
 router.put("/cancel/:bookingId", protect, cancelBooking);
-router.post("/refund/create", protect, createRefundRequest);
+router.post("/refund/create/:id", protect, authorize('Customer'), createRefundRequest);
 
 module.exports = router;
 
