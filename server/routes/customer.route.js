@@ -9,7 +9,7 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
     createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount,
     getUserBookings, getUserPayments, getUserReviews, getUserNotifications, getAllHelpCenters, getHelpCenterByHeading,
-    createRefundRequest, cancelBooking
+    createRefundRequest, cancelBooking, getBookingDetails
 } = require('../controllers/customer.controller')
 
 const router = express.Router();
@@ -36,6 +36,7 @@ router.get('/hero/:id', getHeroByCategory);
 router.get('/profile', protect, authorize('Customer'), getUserProfile);
 router.get("/bookings", protect, authorize('Customer'), getUserBookings);
 router.get("/payments", protect, authorize('Customer'), getUserPayments);
+router.get("/details/:bookingId", protect, getBookingDetails);
 router.get("/reviews", protect, authorize('Customer'), getUserReviews);
 router.get("/notifications", protect, authorize('Customer'), getUserNotifications);
 router.delete("/delete-account", protect, authorize('Customer'), deleteAccount);
@@ -61,7 +62,7 @@ router.get("/specific-serviceDetails/:id", getSpecificServiceDetails);
 router.get("/specific-labourerDetails/:id", getSpecificLabourDetails);
 
 
-//router.post("/cancellation/:id", protect, authorize("Customer"), cancelBooking);
+router.post("/cancellation/:id", protect, authorize("Customer"), cancelBooking);
 router.get('/labourers/type/:type', optionalAuth, getLabourersByType);
 
 router.post('/labour-booking', protect, authorize('Customer'), createLabourBooking);

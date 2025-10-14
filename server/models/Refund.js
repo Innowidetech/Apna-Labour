@@ -29,7 +29,7 @@ const RefundSchema = new mongoose.Schema(
             mode: {
                 type: String,
                 enum: ["bank_transfer", "original_payment_method", "wallet"],
-                required: true
+                required: false,
             },
             bankDetails: {
                 bankName: { type: String },
