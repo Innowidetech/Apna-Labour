@@ -593,7 +593,7 @@ exports.getUserProfile = async (req, res) => {
 exports.getUserBookings = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { filter } = req.query; // e.g., "2025", "last30"
+        const { filter } = req.query;
 
         let filterCondition = { user: userId };
 
@@ -614,13 +614,14 @@ exports.getUserBookings = async (req, res) => {
         }
 
         const bookings = await Booking.find(filterCondition)
-            .populate("items.unit", "title price image")
+            .populate("items.unit", "title price image _id")
             .sort({ createdAt: -1 });
 
         //  Format data
         const formattedBookings = bookings.map(booking => ({
             _id: booking._id,
             items: booking.items.map(item => ({
+                unitId: item.unit?._id || null,
                 title: item.unit?.title || "Service",
                 image: item.unit?.image || null,
                 price: item.price
@@ -1938,14 +1939,12 @@ exports.cancelBooking = async (req, res) => {
             return res.status(404).json({ message: "Booking not found" });
         }
 
-        // Prevent cancelling already Cancelled or Refunded bookings
         if (["Cancelled", "Refunded"].includes(booking.status)) {
             return res.status(400).json({
                 message: `Booking with status "${booking.status}" cannot be cancelled`
             });
         }
 
-        // Update booking status to Cancelled
         booking.status = "Cancelled";
         booking.cancellation = {
             reason,
@@ -1954,7 +1953,7 @@ exports.cancelBooking = async (req, res) => {
 
         await booking.save();
 
-        // Create refund if payment is not COD
+
         let refundCreated = false;
         if (booking.paymentMethod !== "COD") {
             const refund = new Refund({

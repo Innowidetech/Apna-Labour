@@ -62,7 +62,7 @@ router.get("/specific-serviceDetails/:id", getSpecificServiceDetails);
 router.get("/specific-labourerDetails/:id", getSpecificLabourDetails);
 
 
-router.post("/cancellation/:id", protect, authorize("Customer"), cancelBooking);
+router.post("/cancellation/:bookingId", protect, authorize("Customer"), cancelBooking);
 router.get('/labourers/type/:type', optionalAuth, getLabourersByType);
 
 router.post('/labour-booking', protect, authorize('Customer'), createLabourBooking);
@@ -70,7 +70,7 @@ router.get('/labour-booking/my-bookings', protect, authorize('Customer'), getLab
 
 router.get("/accordian", protect, getAllHelpCenters);
 router.get('/get-help-center/:heading', getHelpCenterByHeading);
-router.put("/cancel/:bookingId", protect, cancelBooking);
+//router.put("/cancel/:bookingId", protect, cancelBooking);
 router.post("/refund/create/:id", protect, authorize('Customer'), createRefundRequest);
 
 module.exports = router;

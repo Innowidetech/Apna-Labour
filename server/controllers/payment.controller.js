@@ -14,13 +14,13 @@ const razorpay = new Razorpay({
 exports.createPaymentOrder = async (req, res) => {
     try {
         const { bookingId } = req.body;
-        const userId = req.user.id; // 🔹 Save user ID
+        const userId = req.user.id; 
 
         const booking = await Booking.findById(bookingId);
         if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
 
         const options = {
-            amount: booking.totalAmount * 100, // 🔹 totalAmount in paise
+            amount: booking.totalAmount * 100, // totalAmount in paise
             currency: "INR",
             receipt: `receipt_${booking._id}`
         };
@@ -28,9 +28,9 @@ exports.createPaymentOrder = async (req, res) => {
         const order = await razorpay.orders.create(options);
 
         const payment = new Payment({
-            userId,                    // 🔹 Save user ID
+            userId,                    
             bookingId,
-            customerId: booking.user,  // Assuming booking.user is the customer
+            customerId: booking.user,  
             amount: booking.totalAmount,
             orderId: order.id
         });
