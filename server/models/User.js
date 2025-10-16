@@ -8,7 +8,7 @@ const UserSchema = new mongoose.Schema({
     isActive: { type: Boolean, default: true },
 
     // For Google login
-    googleId: { type: String, unique: true, sparse: true, default: null },
+    googleId: { type: String, sparse: true, default: null },
     picture: { type: String, default: null },
 
     otp: { type: String, default: null },

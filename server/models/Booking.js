@@ -1,8 +1,16 @@
 const mongoose = require("mongoose");
+const { v4: uuidv4 } = require("uuid");
 
 const bookingSchema = new mongoose.Schema(
     {
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        bookingId: {
+            type: String,
+            unique: true,
+            default: function () {
+                return "BK-" + uuidv4().split("-")[0].toUpperCase();
+            },
+        },
 
         items: [
             {
@@ -25,7 +33,7 @@ const bookingSchema = new mongoose.Schema(
 
         status: {
             type: String,
-            enum: ["Pending", "Confirmed", "Cancelled"],
+            enum: ["Pending", "Confirmed", "Cancelled", "Completed", "Refund Requested", "Refunded"],
             default: "Pending",
         },
 
@@ -35,7 +43,7 @@ const bookingSchema = new mongoose.Schema(
         signature: { type: String }, // Razorpay signature
 
         paymentMethod: { type: String, enum: ["Razorpay", "COD"], required: true },
-
+        completedAt: { type: Date, default: null },
         bookedAt: { type: Date, default: Date.now },
     },
     { timestamps: true }

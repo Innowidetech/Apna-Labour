@@ -1,4 +1,8 @@
-import React, { useState, useEffect } from "react";
+
+import React, { useState, useEffect, useRef } from "react";
+
+// import React, { useState, useEffect } from "react";
+
 import { Menu, X, Search, MapPin, ShoppingCart, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
@@ -13,6 +17,11 @@ const Navbar = () => {
 
   // ✅ Redux state
   const { user, token } = useSelector((state) => state.auth);
+
+
+  const dropdownRef = useRef(null); // ✅ ref for profile dropdown
+
+
 
   const toggleMenu = () => setIsOpen(!isOpen);
   const toggleUserMenu = () => setUserMenu(!userMenu);
@@ -60,6 +69,22 @@ const Navbar = () => {
     fetchProfile();
   }, [token]);
 
+
+  // ✅ Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setUserMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+
   return (
     <nav className="bg-white fixed w-full z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -103,7 +128,10 @@ const Navbar = () => {
                 onClick={toggleUserMenu}
               />
               {userMenu && (
-                <div className="absolute right-0 mt-3 w-72 bg-white rounded-xl shadow-lg border p-4 z-50">
+                <div
+                  ref={dropdownRef} // ✅ attach ref for outside click
+                  className="absolute right-0 mt-3 w-72 bg-white rounded-xl shadow-lg border p-4 z-50"
+                >
                   {!user ? (
                     <>
                       <p className="font-semibold text-gray-800">Welcome!</p>

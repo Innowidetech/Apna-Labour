@@ -4,7 +4,7 @@ const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrain
     createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
-    createHeroAppliance,markTrainingCompleted
+    createHeroAppliance, markTrainingCompleted, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -25,7 +25,9 @@ router.post('/service-type', protect, authorize('Admin'), upload.fields([{ name:
 router.post('/specific-services', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createSpecificService);
 router.post("/units", protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), createUnit);
 
+router.put('/update-unit/:unitId', protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), updateUnit);
 
+router.delete('/delete-unit/:unitId', protect, authorize("Admin"), deleteUnit);
 
 router.post('/hero', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createHeroSection);
 router.post("/hero-appliance", protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), createHeroAppliance);
@@ -38,6 +40,8 @@ router.get('/labourers', protect, authorize('Admin'), getAllLabourers);
 router.patch('/accept-applicant/:id', protect, authorize('Admin'), acceptApplicant);
 router.patch('/training-completed/:id', protect, authorize('Admin'), markTrainingCompleted);
 router.get('/labourers/accepted', protect, authorize('Admin'), getAcceptedLabourers);
+
+router.post("/accordian", protect, authorize('Admin'), createHelpCenter);
 
 router.get("/contacts", protect, authorize("Admin"), getContacts);
 module.exports = router;

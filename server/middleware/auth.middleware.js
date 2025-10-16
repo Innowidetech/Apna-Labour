@@ -22,7 +22,7 @@ exports.protect = async (req, res, next) => {
 
         // ✅ Use "id" as you requested
         req.user = {
-            id: user._id,
+            userId: user._id,
             role: user.role,
             email: user.email,
         };
@@ -52,7 +52,7 @@ exports.optionalAuth = async (req, res, next) => {
         }
 
         req.user = {
-            id: user._id,
+            userId: user._id,
             role: user.role,
             email: user.email,
         };

@@ -121,9 +121,14 @@ const Login = () => {
         {/* Right Section */}
         <div className="w-full md:w-1/2 p-8 relative">
           {/* Close Button */}
-          <button className="absolute right-4 top-4 text-gray-500 hover:text-gray-700">
-            <X size={22} />
-          </button>
+        {/* Close Button */}
+<button
+  className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+  onClick={() => setUserMenu(false)} // ✅ closes the dropdown
+>
+  <X size={22} />
+</button>
+
 
           <h1 className="text-2xl font-bold text-center text-blue-900 mb-6">
             Apna Labour
