@@ -4,7 +4,7 @@ const CustomerSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
     image: { type: String }, // store image URL or file path
     gender: { type: String, enum: ['Male', 'Female'] },
-     address: {
+    address: {
         HNo: { type: String },
         buildingName: { type: String },
         street: { type: String },

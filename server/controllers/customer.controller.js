@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const User = require('../models/User');
 const Labourer = require('../models/Labourer');
 const Customer = require('../models/Customer');
@@ -10,7 +11,11 @@ const Payment = require("../models/Payment");
 const Review = require("../models/Review");
 const Notification = require("../models/Notification");
 const Dispute = require("../models/Dispute");
+const HelpCenter = require("../models/HelpCenter");
 const Cancellation = require("../models/Cancellation");
+const Refund = require("../models/Refund");
+
+
 const { Category, SubCategory, AppliancesType, ServiceType, SpecificService, Unit, HeroSection } = require("../models/Services");
 const { uploadMedia, deleteMedia } = require('../utils/cloudinary');
 const Razorpay = require("razorpay");
@@ -19,6 +24,7 @@ const { formatAddress } = require('../utils/formatAddress');
 const { geocodeAddress } = require("../utils/geocodeAddress");
 const { getDistanceBetweenPoints } = require("../utils/getDistance");
 const LabourBooking = require("../models/labourBooking");
+
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -29,7 +35,7 @@ const razorpay = new Razorpay({
 exports.createOrAddReview = async (req, res) => {
     try {
         const { targetType, targetId, rating, feedback } = req.body;
-        const userId = req.user._id;
+        const userId = req.user.userId;
 
         if (!targetType || !targetId || !rating) {
             return res.status(400).json({ message: "Please provide all the details" })
@@ -53,7 +59,7 @@ exports.createOrAddReview = async (req, res) => {
 
 // exports.addToCart = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const { unitId, quantity } = req.body;
 
 //         if (!unitId) return res.status(400).json({ message: "unitId is required" });
@@ -92,7 +98,7 @@ exports.createOrAddReview = async (req, res) => {
 
 // exports.removeFromCart = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const { unitId } = req.params; // this is the Unit _id
 
 //         const cart = await Cart.findOne({ user: userId });
@@ -115,7 +121,7 @@ exports.createOrAddReview = async (req, res) => {
 
 // exports.getCart = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
 
 //         if (!cart || cart.items.length === 0) {
@@ -143,7 +149,7 @@ exports.createOrAddReview = async (req, res) => {
 
 exports.addToCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.id : null;
+        const userId = req.user ? req.user.userId : null;
         let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
 
         // Create guestId if not logged in
@@ -226,7 +232,7 @@ exports.addToCart = async (req, res) => {
 
 exports.getCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.id : null;
+        const userId = req.user ? req.user.userId : null;
         let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
 
@@ -303,7 +309,7 @@ exports.getCart = async (req, res) => {
 
 exports.removeFromCart = async (req, res) => {
     try {
-        const userId = req.user ? req.user.id : null;
+        const userId = req.user ? req.user.userId : null;
 
         // Use header guestId (like add/get) → fallback to cookie guestId
         const guestId = req.headers["x-guest-id"] || req.cookies.guestId;
@@ -509,7 +515,7 @@ exports.searchServices = async (req, res) => {
 };
 exports.getUserProfileName = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         // 1️⃣ Fetch base user info (including _id)
         const user = await User.findById(userId).select(
@@ -553,7 +559,7 @@ exports.getUserProfileName = async (req, res) => {
 
 exports.getUserProfile = async (req, res) => {
     try {
-        const userId = req.user.id; // ✅ correct key from JWT
+        const userId = req.user.userId; // ✅ correct key from JWT
 
         // Find user basic info
         const user = await User.findById(userId).select("-password");
@@ -587,15 +593,61 @@ exports.getUserProfile = async (req, res) => {
 exports.getUserBookings = async (req, res) => {
     try {
         const userId = req.user.userId;
+        const { filter } = req.query;
 
-        const bookings = await Booking.find({ user: userId })
-            .populate("items.unit", "title price description image")
+        let filterCondition = { user: userId };
+
+        //  Apply filters
+        if (filter) {
+            const now = new Date();
+
+            if (filter === "last30") {
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(now.getDate() - 30);
+                filterCondition.bookingDate = { $gte: thirtyDaysAgo, $lte: now };
+            } else if (/^\d{4}$/.test(filter)) {
+                const year = parseInt(filter);
+                const startOfYear = new Date(`${year}-01-01T00:00:00Z`);
+                const endOfYear = new Date(`${year}-12-31T23:59:59Z`);
+                filterCondition.bookingDate = { $gte: startOfYear, $lte: endOfYear };
+            }
+        }
+
+        const bookings = await Booking.find(filterCondition)
+            .populate("items.unit", "title price image _id")
             .sort({ createdAt: -1 });
 
+        //  Format data
+        const formattedBookings = bookings.map(booking => ({
+            _id: booking._id,
+            items: booking.items.map(item => ({
+                unitId: item.unit?._id || null,
+                title: item.unit?.title || "Service",
+                image: item.unit?.image || null,
+                price: item.price
+            })),
+            status: booking.status,
+            bookingDate: booking.bookingDate,
+        }));
+
+        //  Separate for 2025 (Confirmed/Pending vs others)
+        if (filter === String(new Date().getFullYear())) {
+            const upcoming = formattedBookings.filter(b => b.status === "Confirmed" || b.status === "Pending");
+            const past = formattedBookings.filter(b => !["Confirmed", "Pending"].includes(b.status));
+
+            return res.status(200).json({
+                message: "Bookings fetched successfully",
+                upcoming,
+                past,
+            });
+        }
+
+        //  Default response for other filters
         res.status(200).json({
             message: "Bookings fetched successfully",
-            bookings,
+            bookings: formattedBookings,
         });
+
     } catch (err) {
         console.error("Bookings Fetch Error:", err);
         res.status(500).json({ message: err.message });
@@ -606,24 +658,77 @@ exports.getUserPayments = async (req, res) => {
     try {
         const userId = req.user.userId;
 
+        // Fetch user info
+        const user = await User.findById(userId).select("name email mobileNumber");
+
+        // Fetch customer info (for address)
+        const customer = await Customer.findOne({ userId });
+
+        // Fetch all bookings by this user
         const bookings = await Booking.find({ user: userId })
-            .populate("items.unit", "title price description image")
+            .populate("items.unit", "title price image")
             .sort({ createdAt: -1 });
 
-        const payments = bookings.map(b => ({
-            _id: b._id,
-            totalAmount: b.totalAmount,
-            paymentId: b.paymentId,
-            orderId: b.orderId,
-            signature: b.signature,
-            paymentMethod: b.paymentMethod,
-            status: b.status,
-            bookedAt: b.bookedAt,
-            items: b.items,
-        }));
+        const payments = bookings.map((b) => {
+            const addr = customer?.address;
+            const formattedAddress = addr
+                ? [
+                    addr.HNo,
+                    addr.buildingName,
+                    addr.street,
+                    addr.area,
+                    addr.landmark,
+                    addr.townCity,
+                    addr.state,
+                    addr.pincode,
+                ]
+                    .filter(Boolean)
+                    .join(", ")
+                : "No address available";
+
+            return {
+                bookingId: b.bookingId,
+                _id: b._id,
+                customerName: user?.name || "Unknown User",
+                customerEmail: user?.email || "Unknown Email",
+                customerAddress: formattedAddress,
+                bookingDate: b.bookingDate,
+                bookedAt: b.createdAt,
+                status: b.status,
+                paymentMethod: b.paymentMethod,
+                totalItems: b.items?.length || 0,
+                subtotal: b.subtotal || 0,
+                tax: b.tax || 0,
+                tip: b.tip || 0,
+                totalAmount: b.totalAmount || 0,
+
+                invoiceDetails: {
+                    bookingId: b.bookingId,
+                    date: b.bookingDate,
+                    customer: {
+                        name: user?.name || "Unknown User",
+                        email: user?.email || "Unknown Email",
+                        address: formattedAddress,
+                    },
+                    items: b.items.map((i) => ({
+                        title: i.unit?.title,
+                        price: i.price,
+                        quantity: i.quantity,
+                        image: i.unit?.image,
+                    })),
+                    summary: {
+                        subtotal: b.subtotal,
+                        tax: b.tax,
+                        tip: b.tip,
+                        totalAmount: b.totalAmount,
+                    },
+                },
+            };
+        });
 
         res.status(200).json({
             message: "Payments fetched successfully",
+            count: payments.length,
             payments,
         });
     } catch (err) {
@@ -634,25 +739,28 @@ exports.getUserPayments = async (req, res) => {
 
 exports.getUserReviews = async (req, res) => {
     try {
-        const userId = req.user.userId;
+        const userId = req.user.userId; // from protect middleware
         const { period } = req.query;
 
-        let filter = { userId };
+        // Convert userId to ObjectId for filtering
+        const filter = { userId: new mongoose.Types.ObjectId(userId) };
 
+        // Optional period filter
         if (period) {
             if (period === "last30") {
                 const last30 = new Date();
                 last30.setDate(last30.getDate() - 30);
                 filter.createdAt = { $gte: last30 };
             } else if (!isNaN(period)) {
-                const start = new Date(`${period}-01-01T00:00:00.000Z`);
-                const end = new Date(`${parseInt(period) + 1}-01-01T00:00:00.000Z`);
+                const year = parseInt(period);
+                const start = new Date(`${year}-01-01T00:00:00.000Z`);
+                const end = new Date(`${year + 1}-01-01T00:00:00.000Z`);
                 filter.createdAt = { $gte: start, $lt: end };
             }
         }
 
         const reviews = await Review.find(filter)
-            .populate("targetId", "title name")
+            .populate("targetId", "title name image") //  include image
             .sort({ createdAt: -1 });
 
         res.status(200).json({
@@ -685,17 +793,17 @@ exports.deleteAccount = async (req, res) => {
     try {
         const userId = req.user.userId;
 
-        // ✅ Check if user exists
+        //  Check if user exists
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        // ⚠️ Optional: Soft delete (if you want to keep record)
+        //  Optional: Soft delete (if you want to keep record)
         // user.isDeleted = true;
         // await user.save();
 
-        // 🧹 Delete related data
+        //  Delete related data
         await Promise.all([
             Customer.deleteOne({ userId }),
             Booking.deleteMany({ user: userId }),
@@ -759,8 +867,8 @@ exports.updateCustomerProfile = async (req, res) => {
 
         // 🔹 Update or create customer
         const customer = await Customer.findOneAndUpdate(
-            { userId: req.user.id },
-            { $set: { ...updateData, userId: req.user._id } },
+            { userId: req.user.userId },
+            { $set: { ...updateData, userId: req.user.userId } },
             { new: true, upsert: true }
         );
 
@@ -773,7 +881,7 @@ exports.updateCustomerProfile = async (req, res) => {
         let updatedUser = null;
         if (Object.keys(userUpdates).length > 0) {
             updatedUser = await User.findByIdAndUpdate(
-                req.user.id,
+                req.user.userId,
                 { $set: userUpdates },
                 { new: true }
             ).select("-password");
@@ -801,7 +909,7 @@ exports.updateCustomerProfile = async (req, res) => {
 
 exports.updateUserStatus = async (req, res) => {
     try {
-        const userId = req.user.id; // ✅ get from auth middleware
+        const userId = req.user.userId; //  get from auth middleware
 
         // Find the user
         const user = await User.findById(userId);
@@ -986,7 +1094,8 @@ exports.getHeroByCategory = async (req, res) => {
 
 exports.saveSlot = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user ? req.user.userId : null;
+        let guestId = req.headers["x-guest-id"]; // from frontend header
         const { bookingDate, timeSlot } = req.body;
 
         // ✅ Validate input
@@ -994,23 +1103,45 @@ exports.saveSlot = async (req, res) => {
             return res.status(400).json({ message: "Booking date and time slot are required" });
         }
 
-        // ✅ Check if the user already has a pending booking (to attach slot to)
-        let booking = await Booking.findOne({ user: userId, status: "Pending" });
+        // Get cart
+        const cartQuery = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(cartQuery).populate("items.unit");
+
+        if (!cart || cart.items.length === 0) {
+            return res.status(400).json({ message: "Your cart is empty" });
+        }
+
+        // Check if a pending booking exists
+        let booking = userId
+            ? await Booking.findOne({ user: userId, status: "Pending" })
+            : null;
+
+        const mappedItems = cart.items.map((item) => ({
+            unit: item.unit._id,
+            quantity: item.quantity,
+            price: item.price,
+        }));
+
+        const subtotal = cart.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
         if (!booking) {
-            // If no pending booking exists, create one with only slot details
+            // Create new booking
             booking = new Booking({
-                user: userId,
-                items: [], // will be filled later
-                subtotal: 0,
+                user: userId, // required for logged-in users
+                items: mappedItems,
+                subtotal,
                 tax: 0,
-                totalAmount: 0,
+                tip: 0,
+                totalAmount: subtotal,
                 bookingDate,
                 timeSlot,
-                paymentMethod: "COD", // temporary or default
+                paymentMethod: "COD",
             });
         } else {
-            // If booking already exists, just update slot details
+            // Update existing booking
+            booking.items = mappedItems;
+            booking.subtotal = subtotal;
+            booking.totalAmount = subtotal;
             booking.bookingDate = bookingDate;
             booking.timeSlot = timeSlot;
         }
@@ -1030,9 +1161,10 @@ exports.saveSlot = async (req, res) => {
         });
     }
 };
+
 exports.createBooking = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { tip = 0, paymentMethod } = req.body;
 
         // ✅ Only COD allowed
@@ -1102,7 +1234,7 @@ exports.createBooking = async (req, res) => {
 
 // exports.verifyPayment = async (req, res) => {
 //     try {
-//         const userId = req.user.id;
+//        const userId = req.user.userId;
 //         const { orderId, paymentId, signature, bookingDate, timeSlot, tip = 0 } =
 //             req.body;
 
@@ -1173,7 +1305,7 @@ exports.createBooking = async (req, res) => {
 exports.markNotificationAsRead = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
 
         const notification = await Notification.findOneAndUpdate(
             { _id: id, user: userId },   // ✅ ensures user can update only his own
@@ -1197,7 +1329,7 @@ exports.markNotificationAsRead = async (req, res) => {
 //  Mark all notifications as read
 exports.markAllNotificationsAsRead = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
 
         const result = await Notification.updateMany(
             { user: userId, read: false },
@@ -1216,7 +1348,7 @@ exports.markAllNotificationsAsRead = async (req, res) => {
 exports.deleteNotification = async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
 
         const notification = await Notification.findOneAndDelete({
             _id: id,
@@ -1239,7 +1371,7 @@ exports.deleteNotification = async (req, res) => {
 // Add a Review for a Unit
 exports.addUnitReview = async (req, res) => {
     try {
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
         const { unitId } = req.params;
         const { rating, feedback } = req.body;
 
@@ -1270,7 +1402,7 @@ exports.addUnitReview = async (req, res) => {
 
 exports.addLabourerReview = async (req, res) => {
     try {
-        const userId = req.user.id; // from auth middleware
+        const userId = req.user.userId; // from auth middleware
         const { labourerId } = req.params;
         const { rating, feedback } = req.body;
 
@@ -1303,7 +1435,7 @@ exports.addLabourerReview = async (req, res) => {
 //  Edit a Review for a Unit
 exports.editUnitReview = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { reviewId } = req.params;
         const { rating, feedback } = req.body;
 
@@ -1323,7 +1455,7 @@ exports.editUnitReview = async (req, res) => {
 
 exports.deleteUnitReview = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.userId;
         const { reviewId } = req.params;
 
         const review = await Review.findOneAndDelete({ _id: reviewId, userId, targetType: "Unit" });
@@ -1717,6 +1849,243 @@ exports.getLabourBookings = async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Server error",
+            error: error.message,
+        });
+    }
+};
+
+exports.getAllHelpCenters = async (req, res) => {
+    try {
+        const helpCenters = await HelpCenter.find();
+        res.json(helpCenters);
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+exports.getHelpCenterByHeading = async (req, res) => {
+    try {
+        const { heading } = req.params;
+
+        // Case-insensitive search using regex
+        const helpCenter = await HelpCenter.findOne({
+            heading: { $regex: new RegExp(`^${heading}$`, "i") }
+        });
+
+        if (!helpCenter) {
+            return res.status(404).json({ message: "Help Center section not found" });
+        }
+
+        res.json({
+            message: "Help Center section fetched successfully",
+            data: helpCenter
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+exports.createRefundRequest = async (req, res) => {
+    try {
+        const userId = req.user.userId;        // from auth middleware
+        const bookingId = req.params.id;       // from URL param
+        const { message, refund } = req.body;  // from frontend
+
+        if (!refund || !refund.mode) {
+            return res.status(400).json({
+                message: "Refund mode is required",
+            });
+        }
+
+        const existingRefund = await Refund.findOne({ userId, bookingId });
+        if (existingRefund) {
+            return res.status(400).json({
+                message: "A refund request for this booking already exists",
+                data: existingRefund,
+            });
+        }
+
+        const refundRequest = await Refund.create({
+            userId,
+            bookingId,
+            message,
+            refund,
+        });
+
+        res.status(201).json({
+            message: "Refund request created successfully",
+            data: refundRequest,
+        });
+    } catch (error) {
+        console.error("Refund Creation Error:", error);
+        res.status(500).json({
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
+
+exports.cancelBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { reason } = req.body;
+
+        if (!reason) {
+            return res.status(400).json({ message: "Cancellation reason is required" });
+        }
+
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
+        }
+
+        if (["Cancelled", "Refunded"].includes(booking.status)) {
+            return res.status(400).json({
+                message: `Booking with status "${booking.status}" cannot be cancelled`
+            });
+        }
+
+        booking.status = "Cancelled";
+        booking.cancellation = {
+            reason,
+            cancelledAt: new Date()
+        };
+
+        await booking.save();
+
+
+        let refundCreated = false;
+        if (booking.paymentMethod !== "COD") {
+            const refund = new Refund({
+                userId: booking.user,
+                bookingId: booking._id,
+                paymentId: booking.paymentId || null,
+                reason,
+                refund: {
+                    mode: "original_payment_method"
+                },
+                status: "requested",
+                refundAmount: booking.totalAmount
+            });
+
+            await refund.save();
+            refundCreated = true;
+        }
+
+        res.status(200).json({
+            message: "Booking cancelled successfully",
+            booking,
+            refundCreated
+        });
+
+    } catch (error) {
+        console.error("Cancel Booking Error:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+};
+
+exports.getBookingDetails = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        console.log("BookingId or PaymentId received in params:", bookingId);
+
+        let booking;
+
+        // Try to find booking directly by bookingId or MongoDB _id and populate items.unit
+        booking =
+            (await Booking.findOne({ bookingId }).populate("items.unit", "title image")) ||
+            (await Booking.findById(bookingId).populate("items.unit", "title image"));
+
+        // If not found, check if it's a payment _id and then fetch booking (also populate)
+        if (!booking) {
+            const payment = await Payment.findById(bookingId);
+            if (payment && payment.bookingId) {
+                console.log("Fetched booking using payment.bookingId:", payment.bookingId);
+                booking = await Booking.findOne({ bookingId: payment.bookingId }).populate(
+                    "items.unit",
+                    "title image"
+                );
+            }
+        }
+
+        if (!booking) {
+            return res.status(404).json({ message: "Booking not found" });
+        }
+
+        // Fetch customer info
+        const user = await User.findById(booking.user).select("name email mobileNumber");
+        const customer = await Customer.findOne({ userId: booking.user });
+
+        // Build full address
+        const address = customer?.address
+            ? [
+                customer.address.HNo,
+                customer.address.buildingName,
+                customer.address.street,
+                customer.address.area,
+                customer.address.landmark,
+                customer.address.townCity,
+                customer.address.state,
+                customer.address.pincode,
+            ]
+                .filter(Boolean)
+                .join(", ")
+            : "N/A";
+
+        // Prepare items with titles/images from populated unit (fallbacks included)
+        const items = (booking.items || []).map((item) => ({
+            title: item.unit?.title || item.title || "N/A",
+            image: item.unit?.image || item.image || null,
+            price: item.price ?? item.unit?.price ?? 0,
+            quantity: item.quantity ?? 1,
+        }));
+
+        // Response payload
+        const response = {
+            bookingId: booking.bookingId,
+            _id: booking._id,
+            customerName: user?.name || "N/A",
+            customerEmail: user?.email || "N/A",
+            customerMobile: user?.mobileNumber || "N/A",
+            customerAddress: address,
+            bookingDate: booking.bookingDate,
+            bookedAt: booking.createdAt,
+            orderConfirmedDate: booking.createdAt,
+            serviceCompletedDate: booking.completedAt || null,
+            status: booking.status,
+            paymentMethod: booking.paymentMethod,
+            totalItems: items.length,
+            subtotal: booking.subtotal,
+            tax: booking.tax,
+            tip: booking.tip,
+            totalAmount: booking.totalAmount,
+            invoiceDetails: {
+                bookingId: booking.bookingId,
+                date: booking.bookingDate,
+                customer: {
+                    name: user?.name || "N/A",
+                    email: user?.email || "N/A",
+                    mobile: user?.mobileNumber || "N/A",
+                    address: address,
+                },
+                items,
+                summary: {
+                    subtotal: booking.subtotal,
+                    tax: booking.tax,
+                    tip: booking.tip,
+                    totalAmount: booking.totalAmount,
+                },
+            },
+        };
+
+        res.status(200).json({
+            message: "Booking details fetched successfully",
+            booking: response,
+        });
+    } catch (error) {
+        console.error("Error fetching booking details:", error);
+        res.status(500).json({
+            message: "Error fetching booking details",
             error: error.message,
         });
     }
