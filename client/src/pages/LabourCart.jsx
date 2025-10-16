@@ -1,14 +1,99 @@
 import React, { useState, useEffect } from "react";
 import { CheckCircle, Lock } from "lucide-react";
 
+// Razorpay loader
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
 const LabourCart = () => {
   const [cartItem, setCartItem] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const savedCart = JSON.parse(localStorage.getItem("labourCart")) || [];
     setCartItem(savedCart[0] || null);
   }, []);
 
+  // ------------------- Handle Razorpay Payment -------------------
+  const handlePayment = async () => {
+    if (!cartItem || !cartItem.bookingId) {
+      alert("Booking ID not found. Please try again.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const isScriptLoaded = await loadRazorpayScript();
+      if (!isScriptLoaded) {
+        alert("Razorpay SDK failed to load. Check your internet connection.");
+        setLoading(false);
+        return;
+      }
+
+      // Create order on backend
+      const response = await fetch("https://apnalabour.onrender.com/api/payment/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId: cartItem.bookingId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.message || "Failed to create payment order.");
+        setLoading(false);
+        return;
+      }
+
+      // Razorpay options
+      const options = {
+        key: "rzp_test_N2JZTugUiv8bEs", // test key
+        amount: data.amount || cartItem.labourer.cost * 100, // amount in paisa
+        currency: "INR",
+        name: "Apna Labour",
+        description: "Labour Booking Payment",
+        image: "/repairMan.png",
+        order_id: data.id, // order_id from backend
+        handler: async (response) => {
+          alert("Payment Successful!");
+          console.log("Payment Success:", response);
+
+          // Optionally, you can call your backend to verify payment
+          // or navigate to a success page
+        },
+        prefill: {
+          name: cartItem.customerName || "Customer",
+          email: "customer@example.com",
+          contact: cartItem.labourer.mobileNumber || "9999999999",
+        },
+        theme: { color: "#003049" },
+        modal: {
+          ondismiss: () => {
+            alert("Payment cancelled.");
+            setLoading(false);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (error) {
+      console.error("Payment error:", error);
+      alert("An error occurred during payment. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ------------------- Layout Rendering -------------------
   if (!cartItem) {
     return (
       <div className="flex justify-center items-center h-screen text-gray-500">
@@ -123,8 +208,14 @@ const LabourCart = () => {
             <span>₹{totalAmount.toFixed(2)}</span>
           </div>
 
-          <button className="w-full bg-[#003049] text-white py-2 rounded-md font-medium hover:bg-blue-800 transition">
-            Pay NOW
+          <button
+            onClick={handlePayment}
+            disabled={loading}
+            className={`w-full ${
+              loading ? "bg-gray-500 cursor-not-allowed" : "bg-[#003049] hover:bg-blue-800"
+            } text-white py-2 rounded-md font-medium transition`}
+          >
+            {loading ? "Processing..." : "Pay NOW"}
           </button>
         </div>
       </div>
