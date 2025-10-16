@@ -7,7 +7,7 @@ import App from "./App.jsx";
 
 // ✅ Import Redux
 import { Provider } from "react-redux";
-import store from "./redux/store.js"; // ✅ correct import
+import store from "../src/redux/store.js"// ✅ correct import
 
 
 const root = createRoot(document.getElementById("root"));

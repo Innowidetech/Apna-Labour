@@ -195,4 +195,7 @@ const bookingSlice = createSlice({
 });
 
 export const { clearBookings } = bookingSlice.actions;
+
 export default bookingSlice.reducer;
+
+

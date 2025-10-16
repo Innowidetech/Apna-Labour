@@ -1,7 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
-import accountReducer from './accountSlice'; 
-import bookingReducer from './bookingSlice';
+
+import accountReducer from './accountSlice';
+import bookingReducer from "./bookingSlice";
+
 
 const store = configureStore({
   reducer: {

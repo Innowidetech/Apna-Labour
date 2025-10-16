@@ -1,8 +1,19 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
-
 import appRoutes from "./routes/appRoutes";
 
+// Components
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
+
+// Account Pages
+import Account from "./pages/Account/Account";
+import AccountSidebar from "./pages/Account/AccountSidebar";
+import AccountLayout from "./pages/Account/AccountLayout";
+import MainAccount from "./pages/Account/MainAccount";
+import Bookings from "./pages/Account/Bookings";
+
+// Other Pages
 import Home from "./pages/Home";
 import Casual from "./pages/Casual";
 import Electrician from "./pages/Electrician";
@@ -24,17 +35,13 @@ import ModalServicePage from "./pages/ModalServicePage";
 import FAQ from "./pages/FAQ";
 import WorkerZone from "./pages/WorkerZone";
 import ContactUs from "./pages/ContactUs";
-
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
-
 import LabourCart from "./pages/LabourCart";
 import TeamLabourCart from "./pages/TeamLabourCart";
-import MainAccount from "./pages/Account/MainAccount";
 
+
+// ✅ Layout Component
 function Layout({ children }) {
   const location = useLocation();
-
   const noLayoutRoutes = ["/login", "/viewcart"];
   const hideLayout = noLayoutRoutes.includes(location.pathname);
 
@@ -43,16 +50,12 @@ function Layout({ children }) {
       {!hideLayout && <Navbar />}
       <div className={!hideLayout ? "pt-16" : ""}>
         <Routes>
+          {/* App routes from centralized config */}
           {appRoutes.map((route, index) => (
             <Route key={index} path={route.path} element={route.element} />
           ))}
 
-          <Route path="/service/:id" element={<ServicePage />} />
-          <Route path="/services/:id" element={<ModalServicePage />} />
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/checkout" element={<Checkout />} />
-          <Route path="/account/*" element={<MainAccount />} />
-
+          {/* Static Routes */}
           <Route path="/" element={<Home />} />
           <Route path="/casual" element={<Casual />} />
           <Route path="/electrician" element={<Electrician />} />
@@ -61,18 +64,31 @@ function Layout({ children }) {
           <Route path="/fan" element={<Fan />} />
           <Route path="/light" element={<Light />} />
           <Route path="/wiring" element={<Wiring />} />
+          <Route path="/doorbell" element={<Doorbell />} />
           <Route path="/mcb" element={<MCB />} />
           <Route path="/gyser" element={<Gyser />} />
-          <Route path="/doorbell" element={<Doorbell />} />
           <Route path="/appliances" element={<Appliances />} />
           <Route path="/login" element={<Login />} />
           <Route path="/viewcart" element={<ViewCart />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/workerzone" element={<WorkerZone />} />
           <Route path="/contactus" element={<ContactUs />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/service/:id" element={<ServicePage />} />
+          <Route path="/services/:id" element={<ModalServicePage />} />
+
+          {/* Account Section */}
+         
+          <Route path="/account/*" element={<MainAccount />} />
+          
+
+          {/* Labour */}
           <Route path="/labour-cart" element={<LabourCart />} />
           <Route path="/team-labour-cart" element={<TeamLabourCart />} />
         </Routes>
+
+        {/* Allow nested children */}
         {children}
       </div>
       {!hideLayout && <Footer />}
@@ -80,6 +96,8 @@ function Layout({ children }) {
   );
 }
 
+
+// ✅ Main App Component
 function App() {
   return (
     <Router>

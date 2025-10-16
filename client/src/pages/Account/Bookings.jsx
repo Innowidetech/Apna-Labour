@@ -4,6 +4,7 @@ import {
   fetchBookings,
   fetchFilteredBookings,
   cancelBooking,
+  addReview,
 } from "../../redux/bookingSlice";
 
 
@@ -18,27 +19,30 @@ const Bookings = () => {
     cancelLoading,
     cancelError,
     cancelMessage,
+    reviewLoading,
+    reviewError,
+    reviewMessage,
   } = useSelector((state) => state.bookings);
 
   const [filter, setFilter] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [selectedBookingId, setSelectedBookingId] = useState(null);
 
+  // Review modal state
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [selectedUnitId, setSelectedUnitId] = useState(null);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [feedback, setFeedback] = useState("");
+
   useEffect(() => {
-    if (filter) {
-      dispatch(fetchFilteredBookings(filter));
-    } else {
-      dispatch(fetchBookings());
-    }
+    if (filter) dispatch(fetchFilteredBookings(filter));
+    else dispatch(fetchBookings());
   }, [dispatch, filter]);
 
-  const handleFilterChange = (e) => {
-    setFilter(e.target.value);
-  };
+  const handleFilterChange = (e) => setFilter(e.target.value);
 
-  const handleCancelClick = (bookingId) => {
-    setSelectedBookingId(bookingId);
-  };
+  const handleCancelClick = (bookingId) => setSelectedBookingId(bookingId);
 
   const handleCancelConfirm = () => {
     if (!cancelReason || !selectedBookingId) return;
@@ -47,7 +51,21 @@ const Bookings = () => {
       .then(() => {
         setCancelReason("");
         setSelectedBookingId(null);
-        dispatch(fetchBookings()); // Refresh bookings after cancel
+        dispatch(fetchBookings());
+      });
+  };
+
+  // Handle review submission
+  const handleSubmitReview = () => {
+    if (!selectedUnitId || !rating) return;
+    dispatch(addReview({ unitId: selectedUnitId, rating, feedback }))
+      .unwrap()
+      .then(() => {
+        setShowReviewModal(false);
+        setRating(0);
+        setFeedback("");
+        setSelectedUnitId(null);
+        dispatch(fetchBookings());
       });
   };
 
@@ -65,22 +83,20 @@ const Bookings = () => {
       </div>
     );
 
-  // Use API-provided upcoming/past if available, otherwise split bookings
   const upcoming =
-    apiUpcoming && apiUpcoming.length > 0
+    apiUpcoming?.length > 0
       ? apiUpcoming
       : bookings.filter((b) => ["Confirmed", "Pending"].includes(b.status));
 
   const past =
-    apiPast && apiPast.length > 0
+    apiPast?.length > 0
       ? apiPast
       : bookings.filter((b) => !["Confirmed", "Pending"].includes(b.status));
 
-  // Extract all years from bookings for dynamic year filter
   const allBookings = [...upcoming, ...past];
   const years = Array.from(
     new Set(allBookings.map((b) => new Date(b.bookingDate).getFullYear()))
-  ).sort((a, b) => b - a); // descending order
+  ).sort((a, b) => b - a);
 
   return (
     <div className="flex flex-col md:flex-row bg-gray-50 min-h-screen">
@@ -91,7 +107,7 @@ const Bookings = () => {
           My Bookings
         </h2>
 
-        {/* Filter Dropdown */}
+        {/* Filter */}
         <div className="mb-6 flex items-center gap-4">
           <label className="font-medium text-gray-700">Filter:</label>
           <select
@@ -109,7 +125,7 @@ const Bookings = () => {
           </select>
         </div>
 
-        {/* Upcoming Bookings */}
+        {/* Upcoming */}
         <div className="mb-8">
           <h3 className="text-xl font-semibold text-gray-700 mb-4">
             Upcoming Bookings
@@ -120,6 +136,10 @@ const Bookings = () => {
                 key={booking._id}
                 booking={booking}
                 onCancel={handleCancelClick}
+                onReview={(unitId) => {
+                  setSelectedUnitId(unitId);
+                  setShowReviewModal(true);
+                }}
               />
             ))
           ) : (
@@ -127,14 +147,21 @@ const Bookings = () => {
           )}
         </div>
 
-        {/* Past Bookings */}
+        {/* Past */}
         <div>
           <h3 className="text-xl font-semibold text-gray-700 mb-4">
             Past Bookings
           </h3>
           {past.length > 0 ? (
             past.map((booking) => (
-              <BookingCard key={booking._id} booking={booking} />
+              <BookingCard
+                key={booking._id}
+                booking={booking}
+                onReview={(unitId) => {
+                  setSelectedUnitId(unitId);
+                  setShowReviewModal(true);
+                }}
+              />
             ))
           ) : (
             <p className="text-gray-500">No past bookings.</p>
@@ -181,13 +208,81 @@ const Bookings = () => {
             </div>
           </div>
         )}
+
+        {/* Review Modal */}
+        {showReviewModal && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                Rate & Review
+              </h3>
+
+              {/* Stars */}
+              <div className="flex gap-2 mb-4">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRating(star)}
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    className={`text-2xl transition ${
+                      star <= (hoverRating || rating)
+                        ? "text-yellow-400"
+                        : "text-gray-300"
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="Write your feedback..."
+                className="w-full border rounded-lg p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+
+              {reviewError && (
+                <p className="text-red-600 text-sm mb-2">{reviewError}</p>
+              )}
+              {reviewMessage && (
+                <p className="text-green-600 text-sm mb-2">{reviewMessage}</p>
+              )}
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowReviewModal(false);
+                    setRating(0);
+                    setFeedback("");
+                    setSelectedUnitId(null);
+                  }}
+                  className="px-4 py-2 rounded-lg border hover:bg-gray-100"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={handleSubmitReview}
+                  disabled={reviewLoading}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {reviewLoading ? "Submitting..." : "Submit Review"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-const BookingCard = ({ booking, onCancel }) => {
-  const total = booking.items?.reduce((sum, i) => sum + (i.price || 0), 0) || 0;
+// BookingCard
+const BookingCard = ({ booking, onCancel, onReview }) => {
+  const total =
+    booking.items?.reduce((sum, i) => sum + (i.price || 0), 0) || 0;
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-5 border border-gray-100 mb-6">
@@ -217,6 +312,7 @@ const BookingCard = ({ booking, onCancel }) => {
           >
             {booking.status}
           </span>
+
           {["Confirmed", "Pending"].includes(booking.status) && onCancel && (
             <button
               onClick={() => onCancel(booking._id)}
@@ -228,11 +324,12 @@ const BookingCard = ({ booking, onCancel }) => {
         </div>
       </div>
 
+      {/* Items */}
       <div className="space-y-4">
         {booking.items?.map((item, index) => (
           <div
-            key={index}
-            className="flex items-center justify-between border border-gray-100 rounded-xl p-3 hover:bg-gray-50 transition"
+            key={`${booking._id}-${index}`}
+            className="flex flex-col md:flex-row md:items-center md:justify-between border border-gray-100 rounded-xl p-3 hover:bg-gray-50 transition"
           >
             <div className="flex items-center gap-3">
               <img
@@ -247,8 +344,21 @@ const BookingCard = ({ booking, onCancel }) => {
                 </p>
               </div>
             </div>
-            <div className="text-right font-semibold text-gray-700">
-              ₹{item.price?.toFixed(2)}
+
+            <div className="flex items-center gap-3 mt-3 md:mt-0">
+              <div className="text-right font-semibold text-gray-700">
+                ₹{item.price?.toFixed(2)}
+              </div>
+
+              {/* Rate & Review per item */}
+              {booking.status === "Completed" && onReview && (
+                <button
+                  onClick={() => onReview(item.unitId)}
+                  className="px-3 py-1 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+                >
+                  Rate & Review
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -264,4 +374,4 @@ const BookingCard = ({ booking, onCancel }) => {
   );
 };
 
-export default Bookings ;
+export default Bookings;

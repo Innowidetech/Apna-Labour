@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { useLocation,useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 const CartPage = () => {
   const location = useLocation();
   const initialCart = location.state?.cartData || null;
-const navigate = useNavigate();
+  const navigate = useNavigate();
 
   const [cartItems, setCartItems] = useState(initialCart?.items || []);
   const [totalPrice, setTotalPrice] = useState(
@@ -14,7 +14,7 @@ const navigate = useNavigate();
   );
   const [loading, setLoading] = useState(!initialCart);
   const [error, setError] = useState(null);
- // Auth/Login states
+  // Auth/Login states
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [emailMobile, setEmailMobile] = useState("");
   const [otp, setOtp] = useState("");
@@ -74,6 +74,11 @@ const navigate = useNavigate();
   };
 
   useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      setShowLoginForm(false); // ✅ hide login if already logged in
+    }
+
     if (!initialCart) {
       fetchCart();
     }
@@ -146,6 +151,7 @@ const navigate = useNavigate();
 
       if (data.token) {
         localStorage.setItem("token", data.token);
+        setShowLoginForm(false); // ✅ hide login box after success
       }
       toast.success("OTP verified, login successful!");
       setStep("next");
@@ -182,7 +188,7 @@ const navigate = useNavigate();
       toast.error(err.message || "Failed to save address");
     }
   };
-// --- Slot Booking ---
+  // --- Slot Booking ---
   const handleBookSlot = async () => {
     if (!slotDate || !slotTime) {
       toast.error("Please select date and time slot");
@@ -226,43 +232,43 @@ const navigate = useNavigate();
   const [profileData, setProfileData] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false);
   const handleProceedCheckout = async () => {
-  try {
-    setProfileLoading(true);
-    const token = localStorage.getItem("token");
-    if (!token) {
-      toast.error("Please login first!");
-      return;
-    }
-
-    const res = await fetch(
-      "https://apnalabour.onrender.com/api/customer/profile/name",
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+    try {
+      setProfileLoading(true);
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("Please login first!");
+        return;
       }
-    );
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      const res = await fetch(
+        "https://apnalabour.onrender.com/api/customer/profile/name",
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-    // Navigate to checkout page with fetched profile data
-    navigate("/checkout", { state: { profileData: data.profile } });
-  } catch (err) {
-    toast.error(err.message || "Failed to fetch profile data");
-  } finally {
-    setProfileLoading(false);
-  }
-};
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
+      // Navigate to checkout page with fetched profile data
+      navigate("/checkout", { state: { profileData: data.profile } });
+    } catch (err) {
+      toast.error(err.message || "Failed to fetch profile data");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-white flex flex-col lg:flex-row p-4 lg:p-10 relative">
       {/* Left Section */}
       <div className="w-full lg:w-1/2 flex flex-col items-center pt-10 pb-6 px-4 lg:px-10">
         <h1 className="text-2xl font-cursive mb-6">Apna Labour</h1>
 
-        {!showLoginForm ? (
+        {!localStorage.getItem("token") && !showLoginForm ? (
           <div className="p-2 w-full max-w-xl text-left flex items-center gap-2 flex-wrap border border-gray-200 rounded-lg">
             <p className="mb-0 text-base flex-1">
               Login to book the service from your existing bag.
@@ -274,7 +280,10 @@ const navigate = useNavigate();
               LOGIN NOW
             </button>
           </div>
-        ) : (
+        ) : null}
+
+        {/* ✅ Show login form only if no token */}
+        {showLoginForm && !localStorage.getItem("token") && (
           <div className="p-6 w-full max-w-xl">
             {step === "login" && (
               <>
@@ -295,7 +304,6 @@ const navigate = useNavigate();
                 >
                   Continue
                 </button>
-
               </>
             )}
 
@@ -320,7 +328,7 @@ const navigate = useNavigate();
             )}
 
             {step === "next" && (
-             <>
+              <>
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 w-full max-w-md mx-auto">
                   {/* Header */}
                   <div className="border-b border-gray-100 pb-3 mb-4">
@@ -362,24 +370,24 @@ const navigate = useNavigate();
                       <span className="text-gray-500 text-lg">💳</span>
                       <h3 className="text-gray-800 text-sm font-medium">Payment method</h3>
                     </div>
-               
-<button
-  className="w-full mt-6 text-white py-2 rounded-md font-medium bg-[#003049] hover:bg-[#002b4c] active:bg-[#003049]"
-  onClick={handleProceedCheckout}
-  disabled={profileLoading}
->
-  {profileLoading ? "Loading..." : "Proceed to checkout"}
-</button>
+
+                    <button
+                      className="w-full mt-6 text-white py-2 rounded-md font-medium bg-[#003049] hover:bg-[#002b4c] active:bg-[#003049]"
+                      onClick={handleProceedCheckout}
+                      disabled={profileLoading}
+                    >
+                      {profileLoading ? "Loading..." : "Proceed to checkout"}
+                    </button>
 
 
-{profileData && (
-  <div className="mt-4 bg-white border rounded-lg p-4 text-sm shadow-sm">
-    <h4 className="font-semibold text-gray-800 mb-2">Profile Details</h4>
-    <p><span className="font-medium">Name:</span> {profileData.name || "N/A"}</p>
-    <p><span className="font-medium">Email:</span> {profileData.email || "N/A"}</p>
-    <p><span className="font-medium">Phone:</span> {profileData.phoneNumber || "N/A"}</p>
-  </div>
-)}
+                    {profileData && (
+                      <div className="mt-4 bg-white border rounded-lg p-4 text-sm shadow-sm">
+                        <h4 className="font-semibold text-gray-800 mb-2">Profile Details</h4>
+                        <p><span className="font-medium">Name:</span> {profileData.name || "N/A"}</p>
+                        <p><span className="font-medium">Email:</span> {profileData.email || "N/A"}</p>
+                        <p><span className="font-medium">Phone:</span> {profileData.phoneNumber || "N/A"}</p>
+                      </div>
+                    )}
 
 
                   </div>
