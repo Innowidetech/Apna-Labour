@@ -3,6 +3,8 @@ const Booking = require("../models/Booking");
 const Payment = require("../models/Payment");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
+const sendTestMail = require("../utils/sendTestMail");
+const testMail = require("../utils/testMail");
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -14,7 +16,7 @@ const razorpay = new Razorpay({
 exports.createPaymentOrder = async (req, res) => {
     try {
         const { bookingId } = req.body;
-        const userId = req.user.userId; 
+        const userId = req.user.userId;
 
         const booking = await Booking.findById(bookingId);
         if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
@@ -28,9 +30,9 @@ exports.createPaymentOrder = async (req, res) => {
         const order = await razorpay.orders.create(options);
 
         const payment = new Payment({
-            userId,                    
+            userId,
             bookingId,
-            customerId: booking.user,  
+            customerId: booking.user,
             amount: booking.totalAmount,
             orderId: order.id
         });
@@ -80,7 +82,7 @@ exports.verifyPayment = async (req, res) => {
 // Cancel Payment & Booking
 exports.cancelPayment = async (req, res) => {
     try {
-        const { bookingId } = req.params;  // 🔹 Now from params
+        const { bookingId } = req.params;  //  Now from params
 
         // 1. Find booking
         const booking = await Booking.findById(bookingId);
@@ -140,3 +142,21 @@ exports.cancelPayment = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+exports.sendTestMailController = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ success: false, message: "Email address is required" });
+        }
+
+        await sendTestMail(email, "Apna Labour Test Mail", testMail());
+        res.status(200).json({ success: true, message: "Test email sent successfully" });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+
+
