@@ -812,7 +812,7 @@ exports.deleteAccount = async (req, res) => {
             Dispute.deleteMany({ user: userId }),
         ]);
 
-        // 🗑️ Finally delete user
+        //  Finally delete user
         await User.findByIdAndDelete(userId);
 
         return res.status(200).json({

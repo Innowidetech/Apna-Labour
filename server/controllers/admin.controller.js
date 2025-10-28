@@ -8,6 +8,8 @@ const Notification = require('../models/Notification');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const HelpCenter = require('../models/HelpCenter');
+const acceptApplicantTemplate = require('../utils/acceptApplicantTemplate');
+
 
 const {
     Category,
@@ -40,36 +42,80 @@ exports.getAllUsers = async (req, res) => {
 
 exports.approveLabourerRegistrationAndSendTrainingDetails = async (req, res) => {
     try {
-        const user = await User.findById(req.user?.id);
-        if (!user || user.role !== 'Admin') { return res.status(403).json({ message: "Access Denied, only admin have access" }) }
-
-        const { id } = req.params;
-        if (!id) { return res.status(400).json({ message: "Please provide labourer id" }) };
-
-        const labourer = await Labourer.findById(id).populate('userId');
-        if (!labourer) { return res.status(404).json({ message: "No labourer found with the id" }) }
-
-        const { startDate, endDate, timings, location } = req.body;
-        if (!startDate || !endDate || !timings || !location) {
-            return res.status(400).json({ message: "Provide the training details to approve labourer registartion" })
+        // Only Admin can approve
+        const adminUser = await User.findById(req.user?.id);
+        if (!adminUser || adminUser.role !== 'Admin') {
+            return res.status(403).json({ message: "Access Denied, only admin can approve" });
         }
 
-        if (!/.+,\s*[^,]+,\s*[^-]+-\s*\d{6}$/.test(location)) {
+        // Check labourer ID
+        const { id } = req.params;
+        if (!id) {
+            return res.status(400).json({ message: "Please provide labourer ID" });
+        }
+
+        // Fetch labourer and associated user details
+        const labourer = await Labourer.findById(id).populate('userId');
+        if (!labourer) {
+            return res.status(404).json({ message: "No labourer found with the given ID" });
+        }
+
+        // Extract and validate training details
+        const { startDate, endDate, timings, location } = req.body;
+        if (!startDate || !endDate || !timings || !location) {
             return res.status(400).json({
-                message: 'Invalid location format. It should end with "City, State - Pincode (6 digits only)" using commas and a hyphen.'
+                message: "Provide all training details to approve labourer registration",
             });
         }
 
-        labourer.userId.isActive = 'true'
+        // Validate location format (City, State - Pincode)
+        if (!/.+,\s*[^,]+,\s*[^-]+-\s*\d{6}$/.test(location)) {
+            return res.status(400).json({
+                message:
+                    'Invalid location format. Use: "City, State - Pincode (6 digits only)"',
+            });
+        }
+
+        // Activate user
+        labourer.userId.isActive = true;
         await labourer.userId.save();
 
-        const trainingDetails = new TrainingDetails({ labourerId: labourer._id, startDate, endDate, timings, location })
-        await trainingDetails.save()
+        // Save training details
+        const trainingDetails = new TrainingDetails({
+            labourerId: labourer._id,
+            startDate,
+            endDate,
+            timings,
+            location,
+        });
+        await trainingDetails.save();
 
-        res.status(201).json({ message: `Labourer - ${labourer.userId.name} approved successfully and training details sent` })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.status })
+        // Prepare email content
+        const emailHTML = acceptApplicantTemplate(labourer.userId.name, {
+            startDate,
+            endDate,
+            timings,
+            location,
+        });
+
+        // Send email
+        await sendEmail(
+            labourer.userId.email,
+            "🎉 Congratulations! Your Apna Labour Application is Approved",
+            emailHTML
+        );
+
+        // Response
+        return res.status(201).json({
+            message: `Labourer "${labourer.userId.name}" approved successfully and training details emailed.`,
+        });
+
+    } catch (err) {
+        console.error("❌ Error approving labourer:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
@@ -485,7 +531,7 @@ exports.deleteUnit = async (req, res) => {
         // 2️ (Optional) Delete image from Cloudinary if applicable
         //  Only do this if you stored public_id or have a deleteMedia util
         // Example:
-         await deleteMedia(existingUnit.image);
+        await deleteMedia(existingUnit.image);
 
         await Unit.findByIdAndDelete(unitId);
 
@@ -680,6 +726,48 @@ exports.createNotificationForAll = async (req, res) => {
     }
 };
 
+exports.createNotificationForUser = async (req, res) => {
+    try {
+        const { userId, title, message } = req.body;
+
+
+        if (!userId || !title || !message) {
+            return res.status(400).json({ message: "userId, title & message are required" });
+        }
+
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+
+        if (!req.user || !req.user.userId) {
+            return res.status(401).json({ message: "Unauthorized: admin not found in request" });
+        }
+
+        const notification = await Notification.create({
+            user: userId,
+            title,
+            message,
+            createdBy: req.user.userId //  use userId instead of id
+        });
+
+
+        res.status(201).json({
+            message: "Notification sent successfully",
+            notification
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            error: err.message
+        });
+    }
+};
+
+
+
 exports.getContacts = async (req, res) => {
     try {
         const contacts = await Contact.find().sort({ createdAt: -1 });
@@ -760,7 +848,7 @@ exports.createHelpCenter = async (req, res) => {
         const helpCenter = await HelpCenter.create({
             heading,
             accordions,
-            createdBy: req.user?._id || null
+            createdBy: req.user?.userId || null
         });
 
         res.status(201).json({
