@@ -5,6 +5,7 @@ const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const sendTestMail = require("../utils/sendTestMail");
 const testMail = require("../utils/testMail");
+const LabourBooking = require("../models/labourBooking");
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -13,35 +14,87 @@ const razorpay = new Razorpay({
 
 
 // Create Razorpay Order
+// exports.createPaymentOrder = async (req, res) => {
+//     try {
+//         const { bookingId } = req.body;
+//         const userId = req.user.userId;
+
+//         const booking = await Booking.findById(bookingId);
+//         if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+//         const options = {
+//             amount: booking.totalAmount * 100, // totalAmount in paise
+//             currency: "INR",
+//             receipt: `receipt_${booking._id}`
+//         };
+
+//         const order = await razorpay.orders.create(options);
+
+//         const payment = new Payment({
+//             userId,
+//             bookingId,
+//             customerId: booking.user,
+//             amount: booking.totalAmount,
+//             orderId: order.id
+//         });
+
+//         await payment.save();
+
+//         res.status(201).json({ success: true, order });
+//     } catch (error) {
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// };
+
 exports.createPaymentOrder = async (req, res) => {
     try {
-        const { bookingId } = req.body;
-        const userId = req.user.userId;
+        const { bookingId } = req.body; // send MongoDB "_id" from frontend
+        const userId = req.user.userId; // ✅ set by your auth middleware
 
-        const booking = await Booking.findById(bookingId);
-        if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+        // 1️⃣ Find the booking
+        const booking = await LabourBooking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: "Booking not found",
+            });
+        }
 
-        const options = {
-            amount: booking.totalAmount * 100, // totalAmount in paise
+        // 2️⃣ Create Razorpay order
+        const totalAmount = booking.totalCost * 100; // convert to paise
+        const order = await razorpay.orders.create({
+            amount: totalAmount,
             currency: "INR",
-            receipt: `receipt_${booking._id}`
-        };
+            receipt: `receipt_${booking._id}`,
+            payment_capture: 1,
+        });
 
-        const order = await razorpay.orders.create(options);
-
+        // 3️⃣ Save payment record in DB
         const payment = new Payment({
             userId,
-            bookingId,
-            customerId: booking.user,
-            amount: booking.totalAmount,
-            orderId: order.id
+            bookingId: booking._id,
+            amount: booking.totalCost,
+            orderId: order.id,
+            status: "created", // matches enum in Payment model
         });
 
         await payment.save();
 
-        res.status(201).json({ success: true, order });
+        // 4️⃣ Send response
+        res.status(201).json({
+            success: true,
+            message: "Payment order created successfully",
+            order,
+            booking,
+        });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error("Error creating payment order:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
     }
 };
 
