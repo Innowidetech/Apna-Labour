@@ -1667,7 +1667,7 @@ exports.createLabourBooking = async (req, res) => {
             purpose,
         } = req.body;
 
-        const UserId = req.user?.id;
+        const UserId = req.user?.userId;
 
         // 1️⃣ Check labourer exists
         const labourer = await Labourer.findById(labourerId);
@@ -1766,7 +1766,7 @@ exports.createLabourBooking = async (req, res) => {
 
 exports.getLabourBookings = async (req, res) => {
     try {
-        const userId = req.user?.id;
+        const userId = req.user?.userId;
 
         if (!userId) {
             return res.status(401).json({ success: false, message: "Unauthorized" });
