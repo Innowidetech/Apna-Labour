@@ -239,3 +239,47 @@ exports.logout = async (req, res) => {
 //     }
 // };
 
+
+exports.adminLogin = async function (req, res) {
+    try {
+        const { ID, password } = req.body;
+
+        if (!ID || !password) {
+            return res.status(400).json({ success: false, message: 'ID and password are required' });
+        }
+
+        // Find user with role 'Admin' and matching ID
+        const admin = await User.findOne({ ID, role: 'Admin' });
+        if (!admin) {
+            return res.status(401).json({ success: false, message: 'Invalid ID or password' });
+        }
+
+        // Compare password
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: 'Invalid ID or password' });
+        }
+
+        // Generate JWT
+        const token = jwt.sign(
+            { id: admin._id, role: admin.role },
+            process.env.JWT_SECRET || 'your_jwt_secret',
+            { expiresIn: '1d' }
+        );
+
+        res.json({
+            success: true,
+            token,
+            admin: {
+                id: admin._id,
+                ID: admin.ID,
+                name: admin.name,
+                role: admin.role
+            }
+        });
+
+    } catch (err) {
+        console.error('Admin login error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};

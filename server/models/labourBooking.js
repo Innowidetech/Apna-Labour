@@ -18,8 +18,8 @@ const labourBookingSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-     bookingDate: { type: Date },
-     timeSlot: { type: String },
+    bookingDate: { type: Date },
+    timeSlot: { type: String },
 
     // Labourer being booked
     labourer: {
@@ -28,23 +28,21 @@ const labourBookingSchema = new mongoose.Schema(
       required: true,
     },
 
-    // Individual or Team
+
     labourType: {
       type: String,
       enum: ["Individual", "Team"],
       required: true,
     },
 
-    // Common fields
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
 
-    // Team specific fields
     numberOfWorkers: { type: Number, default: 1 },
     workLocation: { type: String },
     purpose: { type: String },
 
-    // Payment Option (only relevant for Team)
+
     paymentOption: {
       type: String,
       enum: ["full", "daily"], // only for Team
