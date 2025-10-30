@@ -8,7 +8,7 @@ const labourBookingSchema = new mongoose.Schema(
       type: String,
       unique: true,
       default: function () {
-        return "LAB-" + uuidv4().split("-")[0].toUpperCase();
+        return "BK-" + uuidv4().split("-")[0].toUpperCase();
       },
     },
 

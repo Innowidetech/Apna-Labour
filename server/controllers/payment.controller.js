@@ -48,20 +48,35 @@ const razorpay = new Razorpay({
 
 exports.createPaymentOrder = async (req, res) => {
     try {
-        const { bookingId } = req.body; // send MongoDB "_id" from frontend
-        const userId = req.user.userId; // ✅ set by your auth middleware
+        const { bookingId } = req.body; // only one field from frontend
+        const userId = req.user.userId; // from your auth middleware
 
-        // 1️⃣ Find the booking
-        const booking = await LabourBooking.findById(bookingId);
+        let booking;
+        let bookingType;
+
+        // 1️⃣ Try to find booking in both collections
+        booking = await Booking.findById(bookingId);
+        if (booking) {
+            bookingType = "service";
+        } else {
+            booking = await LabourBooking.findById(bookingId);
+            if (booking) bookingType = "labour";
+        }
+
         if (!booking) {
             return res.status(404).json({
                 success: false,
-                message: "Booking not found",
+                message: "Booking not found in either collection",
             });
         }
 
-        // 2️⃣ Create Razorpay order
-        const totalAmount = booking.totalCost * 100; // convert to paise
+        // 2️⃣ Get total amount based on model
+        const totalAmount =
+            bookingType === "labour"
+                ? booking.totalCost * 100
+                : booking.totalAmount * 100;
+
+        // 3️⃣ Create Razorpay order
         const order = await razorpay.orders.create({
             amount: totalAmount,
             currency: "INR",
@@ -69,25 +84,37 @@ exports.createPaymentOrder = async (req, res) => {
             payment_capture: 1,
         });
 
-        // 3️⃣ Save payment record in DB
+        // 4️⃣ Save payment record
         const payment = new Payment({
             userId,
             bookingId: booking._id,
-            amount: booking.totalCost,
+            amount:
+                bookingType === "labour"
+                    ? booking.totalCost
+                    : booking.totalAmount,
             orderId: order.id,
-            status: "created", // matches enum in Payment model
+            status: "created",
+            bookingType, // optional — for tracking
         });
-
         await payment.save();
 
-        // 4️⃣ Send response
+        // 5️⃣ Update booking with payment info
+        if (bookingType === "labour") {
+            booking.paymentMethod = "Razorpay";
+            booking.paymentStatus = "Pending";
+        } else {
+            booking.orderId = order.id;
+            booking.paymentMethod = "Razorpay";
+        }
+        await booking.save();
+
+        // 6️⃣ Send response
         res.status(201).json({
             success: true,
             message: "Payment order created successfully",
             order,
             booking,
         });
-
     } catch (error) {
         console.error("Error creating payment order:", error);
         res.status(500).json({
