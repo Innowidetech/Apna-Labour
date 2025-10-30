@@ -1713,47 +1713,50 @@ exports.createLabourBooking = async (req, res) => {
             });
         }
 
-        // 4️⃣ Calculate totalDays, dailyRate, serviceFees, tax, totalAmount
+        // 4️⃣ Calculate totalDays, dailyRate, bookingCharge, tax, totalAmount
         const start = new Date(startDate);
         const end = new Date(endDate);
         const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
         let dailyRate = 0;
-        let serviceFees = 0;
+        let serviceFees = 0; // Booking Charge
         let tax = 0;
         let totalAmount = 0;
+
+        const BOOKING_CHARGE = 100; // Constant booking charge
 
         if (labourType === "Individual") {
             const ratePerDay = labourer.cost || 0;
             dailyRate = ratePerDay;
-            serviceFees = Math.round(ratePerDay * totalDays * 0.1); // 10% service fee
-            tax = Math.round((ratePerDay * totalDays + serviceFees) * 0.10); // 18% tax
+            serviceFees = BOOKING_CHARGE; // constant
+            tax = Math.round((ratePerDay * totalDays + serviceFees) * 0.10); // 10% tax
             totalAmount = ratePerDay * totalDays + serviceFees + tax;
         } else if (labourType === "Team") {
             const ratePerLabour = labourer.cost || 0;
             dailyRate = ratePerLabour * numberOfWorkers;
-            serviceFees = Math.round(dailyRate * totalDays * 0.1);
-            tax = Math.round((dailyRate * totalDays + serviceFees) * 0.10);
+            serviceFees = BOOKING_CHARGE; // constant
+            tax = Math.round((dailyRate * totalDays + serviceFees) * 0.10); // 10% tax
             totalAmount = dailyRate * totalDays + serviceFees + tax;
         }
 
         // 5️⃣ Add cost details to bookingData
         bookingData.totalDays = totalDays;
         bookingData.dailyRate = dailyRate;
-        bookingData.serviceFees = serviceFees;
+        bookingData.serviceFees = serviceFees; // Booking Charge
         bookingData.tax = tax;
         bookingData.totalCost = totalAmount;
 
         // 6️⃣ Create booking
         const booking = await LabourBooking.create(bookingData);
+        const totalLabours = labourType === "Individual" ? 1 : (numberOfWorkers || 1);
 
         res.status(201).json({
             success: true,
             booking,
             costBreakdown: {
                 totalDays,
-                dailyRate,
-                serviceFees,
+                totalLabours,
+                bookingCharge: serviceFees, // renamed for response clarity
                 tax,
                 totalAmount,
             },
@@ -1763,7 +1766,6 @@ exports.createLabourBooking = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
-
 exports.getLabourBookings = async (req, res) => {
     try {
         const userId = req.user?.userId;

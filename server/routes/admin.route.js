@@ -4,8 +4,8 @@ const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrain
     createCategory, createSubCategory, createAppliance, createServiceType, createSpecificService, createUnit, getCategories,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
-    createHeroAppliance, markTrainingCompleted, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit, createNotificationForUser
-} = require('../controllers/admin.controller');
+    createHeroAppliance, markTrainingCompleted, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit, createNotificationForUser,
+    getAdminDashboard } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
 const upload = multer({ storage: multer.memoryStorage() });
@@ -45,4 +45,8 @@ router.get('/labourers/accepted', protect, authorize('Admin'), getAcceptedLabour
 router.post("/accordian", protect, authorize('Admin'), createHelpCenter);
 
 router.get("/contacts", protect, authorize("Admin"), getContacts);
+
+router.get("/dashboard", protect, authorize("Admin"), getAdminDashboard);
+
+
 module.exports = router;

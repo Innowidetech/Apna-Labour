@@ -9,6 +9,7 @@ const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const HelpCenter = require('../models/HelpCenter');
 const acceptApplicantTemplate = require('../utils/acceptApplicantTemplate');
+const Booking = require('../models/Booking');
 
 
 const {
@@ -861,8 +862,66 @@ exports.createHelpCenter = async (req, res) => {
 };
 
 
+exports.getAdminDashboard = async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide a date in YYYY-MM-DD format",
+            });
+        }
 
+        // Parse date range for bookings
+        const start = new Date(`${date}T00:00:00.000Z`);
+        const end = new Date(`${date}T23:59:59.999Z`);
 
+        console.log("Query Range:", start, "→", end);
 
+        // 📅 Bookings made on that date
+        const bookings = await Booking.find({
+            bookingDate: { $gte: start, $lte: end },
+        });
 
+        const totalBookings = bookings.length;
+        const totalMoney = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+        const totalCompletedJobs = bookings.filter(b => b.status === "Completed").length;
 
+        // 📊 Count all active professional labours (not date-based)
+        const totalProfessionalLabours = await Labourer.countDocuments({
+            registrationType: "Professional",
+            status: "Accepted",
+            isAvailable: true,
+        });
+
+        // 🔹 Booking trend (per service)
+        const serviceCounts = {};
+        bookings.forEach(b => {
+            b.items?.forEach(item => {
+                const service = item?.serviceName || "Unknown Service";
+                serviceCounts[service] = (serviceCounts[service] || 0) + 1;
+            });
+        });
+
+        const bookingTrend = Object.keys(serviceCounts).map(service => ({
+            service,
+            bookings: serviceCounts[service],
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                summary: {
+                    totalBookings,
+                    totalMoney,
+                    totalProfessionalLabours, // <- independent of date
+                    totalCompletedJobs,
+                },
+                bookingTrend,
+            },
+        });
+    } catch (error) {
+        console.error("Dashboard Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error });
+    }
+};
