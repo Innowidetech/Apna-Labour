@@ -5,7 +5,7 @@ const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrain
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
     createHeroAppliance, markTrainingCompleted, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit, createNotificationForUser,
-    getAdminDashboard } = require('../controllers/admin.controller');
+    getAdminDashboard, getAdminProfile, getBookingsByDate } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
 const upload = multer({ storage: multer.memoryStorage() });
@@ -47,6 +47,7 @@ router.post("/accordian", protect, authorize('Admin'), createHelpCenter);
 router.get("/contacts", protect, authorize("Admin"), getContacts);
 
 router.get("/dashboard", protect, authorize("Admin"), getAdminDashboard);
-
+router.get('/profile', protect, getAdminProfile);
+router.get("/bookings/by-date", protect, authorize("Admin"), getBookingsByDate);
 
 module.exports = router;

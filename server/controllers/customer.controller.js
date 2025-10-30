@@ -1719,30 +1719,28 @@ exports.createLabourBooking = async (req, res) => {
         const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
         let dailyRate = 0;
-        let serviceFees = 0; // Booking Charge
+        // Booking Charge
         let tax = 0;
         let totalAmount = 0;
 
-        const BOOKING_CHARGE = 100; // Constant booking charge
 
         if (labourType === "Individual") {
             const ratePerDay = labourer.cost || 0;
             dailyRate = ratePerDay;
-            serviceFees = BOOKING_CHARGE; // constant
-            tax = Math.round((ratePerDay * totalDays + serviceFees) * 0.10); // 10% tax
-            totalAmount = ratePerDay * totalDays + serviceFees + tax;
+            tax = Math.round((ratePerDay ) * 0.12); // 12% tax
+            totalAmount = ratePerDay   + tax;
         } else if (labourType === "Team") {
             const ratePerLabour = labourer.cost || 0;
             dailyRate = ratePerLabour * numberOfWorkers;
-            serviceFees = BOOKING_CHARGE; // constant
-            tax = Math.round((dailyRate * totalDays + serviceFees) * 0.10); // 10% tax
-            totalAmount = dailyRate * totalDays + serviceFees + tax;
+          // constant
+            tax = Math.round((dailyRate * totalDays ) * 0.12); // 12% tax
+            totalAmount = dailyRate   + tax;
         }
 
         // 5️⃣ Add cost details to bookingData
         bookingData.totalDays = totalDays;
         bookingData.dailyRate = dailyRate;
-        bookingData.serviceFees = serviceFees; // Booking Charge
+        bookingData.serviceFees = dailyRate; // Booking Charge
         bookingData.tax = tax;
         bookingData.totalCost = totalAmount;
 
@@ -1756,7 +1754,7 @@ exports.createLabourBooking = async (req, res) => {
             costBreakdown: {
                 totalDays,
                 totalLabours,
-                bookingCharge: serviceFees, // renamed for response clarity
+                bookingCharge: dailyRate , 
                 tax,
                 totalAmount,
             },

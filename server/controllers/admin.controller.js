@@ -11,7 +11,6 @@ const HelpCenter = require('../models/HelpCenter');
 const acceptApplicantTemplate = require('../utils/acceptApplicantTemplate');
 const Booking = require('../models/Booking');
 
-
 const {
     Category,
     SubCategory,
@@ -861,6 +860,31 @@ exports.createHelpCenter = async (req, res) => {
     }
 };
 
+exports.getAdminProfile = async (req, res) => {
+    try {
+        const adminId = req.user?.userId; // from auth middleware
+        if (!adminId) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+
+        const admin = await User.findById(adminId).select('name role picture');
+        if (!admin) {
+            return res.status(404).json({ success: false, message: "Admin not found" });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                name: admin.name,
+                role: admin.role,
+                picture: admin.picture,
+            },
+        });
+    } catch (error) {
+        console.error("Get Admin Profile Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
 
 exports.getAdminDashboard = async (req, res) => {
     try {
@@ -876,7 +900,6 @@ exports.getAdminDashboard = async (req, res) => {
         const start = new Date(`${date}T00:00:00.000Z`);
         const end = new Date(`${date}T23:59:59.999Z`);
 
-        console.log("Query Range:", start, "→", end);
 
         // 📅 Bookings made on that date
         const bookings = await Booking.find({
@@ -887,13 +910,6 @@ exports.getAdminDashboard = async (req, res) => {
         const totalMoney = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
         const totalCompletedJobs = bookings.filter(b => b.status === "Completed").length;
 
-        // 📊 Count all active professional labours (not date-based)
-        const totalProfessionalLabours = await Labourer.countDocuments({
-            registrationType: "Professional",
-            status: "Accepted",
-            isAvailable: true,
-        });
-
         // 🔹 Booking trend (per service)
         const serviceCounts = {};
         bookings.forEach(b => {
@@ -903,10 +919,12 @@ exports.getAdminDashboard = async (req, res) => {
             });
         });
 
-        const bookingTrend = Object.keys(serviceCounts).map(service => ({
-            service,
-            bookings: serviceCounts[service],
-        }));
+        const totalProfessionalLabours = await Labourer.countDocuments({
+            registrationType: "Professional",
+            status: "Accepted",
+            isAvailable: true,
+            trainingStatus: "Completed",
+        });
 
         res.status(200).json({
             success: true,
@@ -917,11 +935,71 @@ exports.getAdminDashboard = async (req, res) => {
                     totalProfessionalLabours, // <- independent of date
                     totalCompletedJobs,
                 },
-                bookingTrend,
             },
         });
     } catch (error) {
         console.error("Dashboard Error:", error);
         res.status(500).json({ success: false, message: "Server error", error });
+    }
+};
+exports.getBookingsByDate = async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) return res.status(400).json({ success: false, message: "Date is required" });
+
+        // Start & end of the day
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Fetch bookings
+        const bookings = await Booking.find({
+            bookingDate: { $gte: startOfDay, $lte: endOfDay },
+        })
+            .populate("user", "name")                 // Customer name
+            .populate("items.unit", "title")          // Fetch service title from Unit
+            .lean();
+
+        const formatted = bookings.map((b) => {
+            const customerName = b.user?.name || "Unknown";
+
+            // Extract all service titles in this booking
+            const services = b.items?.map(item => item.unit?.title || "Service").join(", ") || "Service";
+
+            // Labourer info
+            const labourer = b.labourerName || (b.status === "Pending" ? "Not assigned" : "—");
+
+            // Payment info
+            const paymentStatus =
+                b.paymentMethod === "Razorpay"
+                    ? `₹${b.totalAmount} - Paid`
+                    : b.paymentMethod === "COD"
+                        ? "COD"
+                        : "Unpaid";
+
+            return {
+                bookingId: b.bookingId,
+                customer: customerName,
+                service: services,      // Correct service titles
+                time: new Date(b.bookingDate).toLocaleString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                }),
+                labour: labourer,
+                status: b.status,
+                payment: paymentStatus,
+            };
+        });
+
+        res.status(200).json({ success: true, data: formatted });
+    } catch (error) {
+        console.error("Get bookings by date error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
