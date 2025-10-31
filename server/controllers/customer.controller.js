@@ -1670,12 +1670,13 @@ exports.createLabourBooking = async (req, res) => {
         const UserId = req.user?.userId;
 
         // 1️⃣ Check labourer exists
-        const labourer = await Labourer.findById(labourerId);
-        if (!labourer) {
-            return res.status(404).json({ success: false, message: "Labourer not found" });
-        }
+        const labourer = await Labourer.findById(labourerId)
+            .populate("userId", "name mobileNumber");
+
 
         // 2️⃣ Determine labour type
+        const leaderName = labourer.userId?.name || "Unknown";
+        const leaderPhone = labourer.userId?.mobileNumber || "Not Provided";
         const labourType = labourer.registrationType; // "Individual" or "Team"
 
         const bookingData = {
@@ -1685,6 +1686,8 @@ exports.createLabourBooking = async (req, res) => {
             startDate,
             endDate,
             status: "Pending",
+            leaderName,
+            leaderPhone,
         };
 
         // 3️⃣ Validate required fields
@@ -1706,6 +1709,8 @@ exports.createLabourBooking = async (req, res) => {
             bookingData.numberOfWorkers = numberOfWorkers;
             bookingData.workLocation = workLocation;
             bookingData.purpose = purpose;
+            bookingData.leaderName = leaderName;   // ✅ add this
+            bookingData.leaderPhone = leaderPhone;
         } else {
             return res.status(400).json({
                 success: false,
@@ -1727,14 +1732,14 @@ exports.createLabourBooking = async (req, res) => {
         if (labourType === "Individual") {
             const ratePerDay = labourer.cost || 0;
             dailyRate = ratePerDay;
-            tax = Math.round((ratePerDay ) * 0.12); // 12% tax
-            totalAmount = ratePerDay   + tax;
+            tax = Math.round((ratePerDay) * 0.12); // 12% tax
+            totalAmount = ratePerDay + tax;
         } else if (labourType === "Team") {
             const ratePerLabour = labourer.cost || 0;
-            dailyRate = ratePerLabour ;
-          // constant
-            tax = Math.round((dailyRate  ) * 0.12); // 12% tax
-            totalAmount = dailyRate   + tax;
+            dailyRate = ratePerLabour;
+            // constant
+            tax = Math.round((dailyRate) * 0.12); // 12% tax
+            totalAmount = dailyRate + tax;
         }
 
         // 5️⃣ Add cost details to bookingData
@@ -1746,17 +1751,25 @@ exports.createLabourBooking = async (req, res) => {
 
         // 6️⃣ Create booking
         const booking = await LabourBooking.create(bookingData);
+
         const totalLabours = labourType === "Individual" ? 1 : (numberOfWorkers || 1);
 
         res.status(201).json({
             success: true,
-            booking,
+            booking: {
+                ...booking._doc,
+                ...(labourType === "Team" && {
+                    leaderName: bookingData.leaderName,
+                    leaderPhone: bookingData.leaderPhone,
+                }),
+            },
             costBreakdown: {
                 totalDays,
                 totalLabours,
-                bookingCharge: dailyRate , 
+                bookingCharge: dailyRate,
                 tax,
                 totalAmount,
+
             },
         });
     } catch (error) {

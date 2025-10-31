@@ -6,6 +6,7 @@ const UserSchema = new mongoose.Schema({
     email: { type: String, sparse: true, default: null },
     role: { type: String, enum: ['Admin', 'Customer', 'Labourer'], default: 'Customer' },
     isActive: { type: Boolean, default: true },
+    isDeleted: { type: Boolean, default: false },
     password: { type: String, default: null },
     ID: { type: String, default: null },
     // For Google login

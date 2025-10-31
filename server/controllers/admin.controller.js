@@ -1154,3 +1154,99 @@ exports.getTop4DemandingServicesByMonth = async (req, res) => {
         });
     }
 };
+
+exports.getFilteredCustomers = async (req, res) => {
+    try {
+        const { city, status } = req.query;
+
+        // 🔹 Base match for role and status
+        const matchStage = { role: "Customer" };
+
+        if (status) {
+            if (status === "Active") matchStage.isActive = true;
+            else if (status === "Inactive") matchStage.isActive = false;
+            else if (status === "Deleted") matchStage.isDeleted = true; // optional soft delete
+        }
+
+        const customers = await User.aggregate([
+            // 1️⃣ Match Customers
+            { $match: matchStage },
+
+            // 2️⃣ Join with Customer collection to get address, gender, etc.
+            {
+                $lookup: {
+                    from: "customers",
+                    localField: "_id",
+                    foreignField: "userId",
+                    as: "customerInfo",
+                },
+            },
+            { $unwind: { path: "$customerInfo", preserveNullAndEmptyArrays: true } },
+
+            // 3️⃣ Join with bookings
+            {
+                $lookup: {
+                    from: "bookings",
+                    localField: "_id",
+                    foreignField: "user",
+                    as: "bookings",
+                },
+            },
+
+            // 4️⃣ Add derived fields
+            {
+                $addFields: {
+                    totalBookings: { $size: "$bookings" },
+                    city: "$customerInfo.address.townCity",
+                    status: {
+                        $cond: [{ $eq: ["$isActive", true] }, "Active", "Inactive"],
+                    },
+                },
+            },
+
+            // 5️⃣ Apply city filter (filter inside joined customerInfo)
+            ...(city
+                ? [
+                    {
+                        $match: {
+                            "customerInfo.address.townCity": {
+                                $regex: new RegExp(city, "i"), // case-insensitive
+                            },
+                        },
+                    },
+                ]
+                : []),
+
+            // 6️⃣ Project final fields
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    mobileNumber: 1,
+                    city: 1,
+                    totalBookings: 1,
+                    status: 1,
+                    createdAt: 1,
+                },
+            },
+
+            // 7️⃣ Sort by total bookings
+            { $sort: { totalBookings: -1 } },
+        ]);
+
+        res.status(200).json({
+            success: true,
+            message: "Customers fetched successfully",
+            total: customers.length,
+            data: customers,
+        });
+    } catch (error) {
+        console.error("Error in getFilteredCustomers:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching customers",
+            error: error.message,
+        });
+    }
+};
