@@ -1731,9 +1731,9 @@ exports.createLabourBooking = async (req, res) => {
             totalAmount = ratePerDay   + tax;
         } else if (labourType === "Team") {
             const ratePerLabour = labourer.cost || 0;
-            dailyRate = ratePerLabour * numberOfWorkers;
+            dailyRate = ratePerLabour ;
           // constant
-            tax = Math.round((dailyRate * totalDays ) * 0.12); // 12% tax
+            tax = Math.round((dailyRate  ) * 0.12); // 12% tax
             totalAmount = dailyRate   + tax;
         }
 

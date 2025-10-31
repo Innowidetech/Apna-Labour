@@ -1003,3 +1003,144 @@ exports.getBookingsByDate = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
+
+exports.getMostDemandingServicesByMonth = async (req, res) => {
+    try {
+        const data = await Booking.aggregate([
+            { $unwind: "$items" },
+
+            // 1️⃣ Get unit info
+            {
+                $lookup: {
+                    from: "units",
+                    localField: "items.unit",
+                    foreignField: "_id",
+                    as: "unitInfo",
+                },
+            },
+            { $unwind: "$unitInfo" },
+
+            // 2️⃣ Get specific service info
+            {
+                $lookup: {
+                    from: "specificservices",
+                    localField: "unitInfo.specificService",
+                    foreignField: "_id",
+                    as: "specificServiceInfo",
+                },
+            },
+            { $unwind: "$specificServiceInfo" },
+
+            // 3️⃣ Get service type info
+            {
+                $lookup: {
+                    from: "servicetypes",
+                    localField: "specificServiceInfo.serviceType",
+                    foreignField: "_id",
+                    as: "serviceTypeInfo",
+                },
+            },
+            { $unwind: "$serviceTypeInfo" },
+
+            // 4️⃣ Get appliances info
+            {
+                $lookup: {
+                    from: "appliancestypes",
+                    localField: "serviceTypeInfo.appliances",
+                    foreignField: "_id",
+                    as: "applianceInfo",
+                },
+            },
+            { $unwind: "$applianceInfo" },
+
+            // 5️⃣ Get subcategory info
+            {
+                $lookup: {
+                    from: "subcategories",
+                    localField: "applianceInfo.subCategory",
+                    foreignField: "_id",
+                    as: "subCategoryInfo",
+                },
+            },
+            { $unwind: "$subCategoryInfo" },
+
+            // 6️⃣ Get category info
+            {
+                $lookup: {
+                    from: "categories",
+                    localField: "subCategoryInfo.category",
+                    foreignField: "_id",
+                    as: "categoryInfo",
+                },
+            },
+            { $unwind: "$categoryInfo" },
+
+            // 7️⃣ Extract month name from booking date
+            {
+                $addFields: {
+                    month: { $month: "$createdAt" }, // 1=Jan, 2=Feb, etc.
+                },
+            },
+
+            // 8️⃣ Group by category + month
+            {
+                $group: {
+                    _id: {
+                        category: "$categoryInfo.title",
+                        month: "$month",
+                    },
+                    totalBookings: { $sum: 1 },
+                },
+            },
+
+            // 9️⃣ Sort by category then month
+            {
+                $sort: {
+                    "_id.category": 1,
+                    "_id.month": 1,
+                },
+            },
+        ]);
+
+        // 🔟 Convert month number → month name for frontend
+        const monthNames = [
+            "",
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ];
+
+        const formatted = {};
+
+        data.forEach((item) => {
+            const category = item._id.category;
+            const month = monthNames[item._id.month];
+            const total = item.totalBookings;
+
+            if (!formatted[category]) formatted[category] = {};
+            formatted[category][month] = total;
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Most demanding services by category and month",
+            data: formatted,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching analytics data",
+            error: error.message,
+        });
+    }
+}; 
