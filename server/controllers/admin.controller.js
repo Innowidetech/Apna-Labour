@@ -1004,12 +1004,12 @@ exports.getBookingsByDate = async (req, res) => {
     }
 };
 
-exports.getMostDemandingServicesByMonth = async (req, res) => {
+exports.getTop4DemandingServicesByMonth = async (req, res) => {
     try {
         const data = await Booking.aggregate([
             { $unwind: "$items" },
 
-            // 1️⃣ Get unit info
+            // 1️⃣ Join Units
             {
                 $lookup: {
                     from: "units",
@@ -1020,7 +1020,7 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             },
             { $unwind: "$unitInfo" },
 
-            // 2️⃣ Get specific service info
+            // 2️⃣ Join Specific Service
             {
                 $lookup: {
                     from: "specificservices",
@@ -1031,7 +1031,7 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             },
             { $unwind: "$specificServiceInfo" },
 
-            // 3️⃣ Get service type info
+            // 3️⃣ Join Service Type
             {
                 $lookup: {
                     from: "servicetypes",
@@ -1042,7 +1042,7 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             },
             { $unwind: "$serviceTypeInfo" },
 
-            // 4️⃣ Get appliances info
+            // 4️⃣ Join Appliance
             {
                 $lookup: {
                     from: "appliancestypes",
@@ -1053,7 +1053,7 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             },
             { $unwind: "$applianceInfo" },
 
-            // 5️⃣ Get subcategory info
+            // 5️⃣ Join SubCategory
             {
                 $lookup: {
                     from: "subcategories",
@@ -1064,7 +1064,7 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             },
             { $unwind: "$subCategoryInfo" },
 
-            // 6️⃣ Get category info
+            // 6️⃣ Join Category
             {
                 $lookup: {
                     from: "categories",
@@ -1075,10 +1075,10 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             },
             { $unwind: "$categoryInfo" },
 
-            // 7️⃣ Extract month name from booking date
+            // 7️⃣ Extract month
             {
                 $addFields: {
-                    month: { $month: "$createdAt" }, // 1=Jan, 2=Feb, etc.
+                    month: { $month: "$createdAt" },
                 },
             },
 
@@ -1093,16 +1093,26 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
                 },
             },
 
-            // 9️⃣ Sort by category then month
+            // 9️⃣ Calculate total per category (for ranking)
             {
-                $sort: {
-                    "_id.category": 1,
-                    "_id.month": 1,
+                $group: {
+                    _id: "$_id.category",
+                    months: {
+                        $push: {
+                            month: "$_id.month",
+                            totalBookings: "$totalBookings",
+                        },
+                    },
+                    totalOverall: { $sum: "$totalBookings" },
                 },
             },
+
+            // 🔟 Sort by total bookings and limit to top 4
+            { $sort: { totalOverall: -1 } },
+            { $limit: 4 },
         ]);
 
-        // 🔟 Convert month number → month name for frontend
+        // 🔹 Convert month numbers → names
         const monthNames = [
             "",
             "Jan",
@@ -1121,18 +1131,18 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
 
         const formatted = {};
 
-        data.forEach((item) => {
-            const category = item._id.category;
-            const month = monthNames[item._id.month];
-            const total = item.totalBookings;
-
-            if (!formatted[category]) formatted[category] = {};
-            formatted[category][month] = total;
+        data.forEach((cat) => {
+            const category = cat._id;
+            formatted[category] = {};
+            cat.months.forEach((m) => {
+                const monthName = monthNames[m.month];
+                formatted[category][monthName] = m.totalBookings;
+            });
         });
 
         res.status(200).json({
             success: true,
-            message: "Most demanding services by category and month",
+            message: "Top 4 most demanding services by month",
             data: formatted,
         });
     } catch (error) {
@@ -1143,4 +1153,4 @@ exports.getMostDemandingServicesByMonth = async (req, res) => {
             error: error.message,
         });
     }
-}; 
+};
