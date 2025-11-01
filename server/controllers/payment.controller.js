@@ -6,14 +6,7 @@ const crypto = require("crypto");
 const sendTestMail = require("../utils/sendTestMail");
 const testMail = require("../utils/testMail");
 const LabourBooking = require("../models/labourBooking");
-const User = require("../models/User");
-const Labourer = require("../models/Labourer");
-const Customer = require("../models/Customer");
-const TrainingDetails = require("../models/TrainingDetails");
-const Contact = require("../models/Contact");
-const TeamMember = require("../models/TeamMember");
-const bcrypt = require('bcryptjs');
-import Cart from '../models/Cart.js';
+const Cart = require("../models/Cart");
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
