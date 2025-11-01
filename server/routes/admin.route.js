@@ -53,4 +53,5 @@ router.get("/bookings/by-date", protect, authorize("Admin"), getBookingsByDate);
 router.get("/most-demanding-services", protect, authorize("Admin"), getTop4DemandingServicesByMonth);
 router.get("/all/customers/filter", protect, authorize("Admin"), getFilteredCustomers);
 
+
 module.exports = router;

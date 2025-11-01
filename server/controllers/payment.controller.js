@@ -108,6 +108,7 @@ exports.createPaymentOrder = async (req, res) => {
         }
         await booking.save();
 
+
         // 6️⃣ Send response
         res.status(201).json({
             success: true,
@@ -131,7 +132,8 @@ exports.verifyPayment = async (req, res) => {
         const { orderId, paymentId, signature } = req.body;
 
         const payment = await Payment.findOne({ orderId });
-        if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+        if (!payment)
+            return res.status(404).json({ success: false, message: "Payment not found" });
 
         // 🔹 Signature verification
         const expectedSignature = crypto
@@ -143,19 +145,30 @@ exports.verifyPayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid payment signature" });
         }
 
-        // 🔹 Update payment and booking
+        // 🔹 Update payment
         payment.paymentId = paymentId;
         payment.signature = signature;
         payment.status = "paid";
         await payment.save();
 
+        // 🔹 Update booking
         await Booking.findByIdAndUpdate(payment.bookingId, {
             paymentStatus: "paid",
             status: "Confirmed"
         });
 
-        res.json({ success: true, message: "Payment verified successfully" });
+        // 🔹 Clear user cart (empty items but keep document)
+        await Cart.findOneAndUpdate(
+            { userId: payment.userId },
+            { $set: { items: [] } } // ✅ just clear items array
+        );
+
+        res.json({
+            success: true,
+            message: "Payment verified successfully, cart cleared",
+        });
     } catch (error) {
+        console.error("Verify Payment Error:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 };

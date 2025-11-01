@@ -235,12 +235,12 @@ exports.getCart = async (req, res) => {
         const userId = req.user ? req.user.userId : null;
         let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
-
-        // Merge guest cart into user cart if logged in
+        // 🔁 Merge guest cart into user cart if logged in
         if (userId && guestId) {
             const guestCart = await Cart.findOne({ guestId });
             if (guestCart) {
                 let userCart = await Cart.findOne({ user: userId });
+
                 if (!userCart) {
                     guestCart.user = userId;
                     guestCart.guestId = undefined;
@@ -249,7 +249,7 @@ exports.getCart = async (req, res) => {
                 } else {
                     for (const item of guestCart.items) {
                         const index = userCart.items.findIndex(
-                            i => i.unit.toString() === item.unit.toString()
+                            (i) => i.unit.toString() === item.unit.toString()
                         );
                         if (index > -1) {
                             userCart.items[index].quantity += item.quantity;
@@ -264,24 +264,28 @@ exports.getCart = async (req, res) => {
             }
         }
 
+        // 🛒 Find user/guest cart
         const query = userId ? { user: userId } : { guestId };
-
         const cart = await Cart.findOne(query).populate("items.unit", "title image");
 
-
+        // 🧾 If cart empty
         if (!cart || cart.items.length === 0) {
             return res.status(200).json({
                 message: "Cart is empty",
                 items: [],
-                totalPrice: 0,
+                subtotal: 0,
+                tax: 0,
+                totalAmount: 0,
             });
         }
 
-        let totalPrice = 0;
-        const items = cart.items.map(item => {
-            const unitDoc = item.unit && item.unit.title ? item.unit : null; // populated unit OR null
-            const price = item.price || 0; // always trust stored price
-            totalPrice += price * item.quantity;
+        // 💰 Calculate subtotal, tax, and total
+        let subtotal = 0;
+        const items = cart.items.map((item) => {
+            const unitDoc = item.unit && item.unit.title ? item.unit : null;
+            const price = item.price || 0;
+            const total = price * item.quantity;
+            subtotal += total;
 
             return {
                 unit: unitDoc
@@ -289,16 +293,24 @@ exports.getCart = async (req, res) => {
                     : { id: item.unit, title: "Unknown / Deleted Item" },
                 quantity: item.quantity,
                 price,
-                total: price * item.quantity
+                total,
             };
         });
 
+        const taxRate = 0.12; // 12% GST
+        const tax = +(subtotal * taxRate).toFixed(2);
+        const totalAmount = +(subtotal + tax).toFixed(2);
+
+        // ✅ Response
         return res.status(200).json({
             message: "Cart fetched successfully",
             items,
-            totalPrice,
+            subtotal: +subtotal.toFixed(2),
+            tax,
+            totalAmount,
         });
     } catch (err) {
+        console.error("Cart Fetch Error:", err);
         return res.status(500).json({
             message: "Internal server error",
             error: err.message,
@@ -306,6 +318,46 @@ exports.getCart = async (req, res) => {
     }
 };
 
+exports.clearCart = async (req, res) => {
+    try {
+        const userId = req.user ? req.user.userId : null;
+        const guestId = req.headers["x-guest-id"];
+
+        if (!userId && !guestId) {
+            return res.status(400).json({
+                success: false,
+                message: "User or Guest ID is required to clear cart",
+            });
+        }
+
+        const query = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(query); // ✅ no populate here
+
+        if (!cart) {
+            return res.status(404).json({
+                success: false,
+                message: "Cart not found",
+            });
+        }
+
+        // Clear only the items
+        cart.items = [];
+        await cart.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Cart cleared successfully",
+            cart,
+        });
+    } catch (error) {
+        console.error("Clear Cart Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: error.message,
+        });
+    }
+};
 
 exports.removeFromCart = async (req, res) => {
     try {
@@ -1167,66 +1219,86 @@ exports.createBooking = async (req, res) => {
         const userId = req.user.userId;
         const { tip = 0, paymentMethod } = req.body;
 
-        // ✅ Only COD allowed
-        if (paymentMethod !== "COD") {
-            return res.status(400).json({ message: "Only COD payment method is supported" });
+        if (!["COD", "Razorpay"].includes(paymentMethod)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid payment method. Only COD or Razorpay allowed.",
+            });
         }
 
-        // ✅ Find existing pending booking (with saved date/time)
+        // ✅ Find existing pending booking
         const booking = await Booking.findOne({ user: userId, status: "Pending" });
         if (!booking) {
             return res.status(404).json({
+                success: false,
                 message: "No pending booking found. Please select a booking date and time first.",
             });
         }
 
-        // ✅ Get customer's address
+        // ✅ Validate address
         const customer = await Customer.findOne({ userId });
         if (!customer || !customer.address || !customer.address.HNo) {
             return res.status(400).json({
-                message: "Please add your address before proceeding with booking",
+                success: false,
+                message: "Please add your address before proceeding with booking.",
             });
         }
 
-        // ✅ Get user's cart
+        // ✅ Fetch cart
         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
         if (!cart || cart.items.length === 0) {
-            return res.status(400).json({ message: "Cart is empty" });
+            return res.status(400).json({ success: false, message: "Cart is empty." });
         }
 
-        // ✅ Calculate prices
+        // ✅ Calculate total
         let subtotal = 0;
-        cart.items.forEach((item) => {
-            subtotal += item.price * item.quantity;
-        });
-
+        cart.items.forEach((item) => (subtotal += item.price * item.quantity));
         const tax = subtotal * 0.1; // 10% GST
         const totalAmount = subtotal + tax + tip;
 
-        // ✅ Update existing booking
+        // ✅ Update booking details
         booking.items = cart.items;
         booking.subtotal = subtotal;
         booking.tax = tax;
         booking.tip = tip;
         booking.totalAmount = totalAmount;
-        booking.paymentMethod = "COD";
-        booking.status = "Confirmed";
+        booking.paymentMethod = paymentMethod;
 
+        // ✅ Case 1: COD
+        if (paymentMethod === "COD") {
+            booking.status = "Confirmed";
+            await booking.save();
+
+            // Clear cart
+            cart.items = [];
+            await cart.save();
+
+            return res.status(200).json({
+                success: true,
+                message: "Booking confirmed with Cash on Delivery.",
+                booking,
+            });
+        }
+
+        // ✅ Case 2: Razorpay
+        // Instead of creating order here, return booking info
+        // The frontend will then call your existing `/payment/order` endpoint
+        // to create a Razorpay order
+
+        booking.status = "Payment Pending";
         await booking.save();
-
-        // ✅ Clear cart after booking
-        cart.items = [];
-        await cart.save();
 
         return res.status(200).json({
             success: true,
-            message: "Booking finalized successfully with COD",
-            booking,
+            message: "Proceed to Razorpay payment.",
+            bookingId: booking._id,
+            totalAmount,
         });
     } catch (err) {
         console.error("Booking Error:", err);
         return res.status(500).json({
-            message: "Internal server error",
+            success: false,
+            message: "Internal server error.",
             error: err.message,
         });
     }
