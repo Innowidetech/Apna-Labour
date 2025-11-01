@@ -4,6 +4,7 @@ const cartSchema = new mongoose.Schema(
     {
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         guestId: { type: String },
+        tip: { type: Number, default: 0 },
         items: [
             {
                 unit: { type: mongoose.Schema.Types.ObjectId, ref: "Unit", required: true },

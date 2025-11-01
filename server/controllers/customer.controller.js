@@ -299,7 +299,8 @@ exports.getCart = async (req, res) => {
 
         const taxRate = 0.12; // 12% GST
         const tax = +(subtotal * taxRate).toFixed(2);
-        const totalAmount = +(subtotal + tax).toFixed(2);
+        const tip = cart.tip || 0; // ✅ include tip
+        const totalAmount = +(subtotal + tax + tip).toFixed(2);
 
         // ✅ Response
         return res.status(200).json({
@@ -307,6 +308,7 @@ exports.getCart = async (req, res) => {
             items,
             subtotal: +subtotal.toFixed(2),
             tax,
+            tip,
             totalAmount,
         });
     } catch (err) {
@@ -1217,23 +1219,7 @@ exports.saveSlot = async (req, res) => {
 exports.createBooking = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { tip = 0, paymentMethod } = req.body;
-
-        if (!["COD", "Razorpay"].includes(paymentMethod)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid payment method. Only COD or Razorpay allowed.",
-            });
-        }
-
-        // ✅ Find existing pending booking
-        const booking = await Booking.findOne({ user: userId, status: "Pending" });
-        if (!booking) {
-            return res.status(404).json({
-                success: false,
-                message: "No pending booking found. Please select a booking date and time first.",
-            });
-        }
+        const { tip } = req.body; // ✅ tip passed from frontend
 
         // ✅ Validate address
         const customer = await Customer.findOne({ userId });
@@ -1249,50 +1235,41 @@ exports.createBooking = async (req, res) => {
         if (!cart || cart.items.length === 0) {
             return res.status(400).json({ success: false, message: "Cart is empty." });
         }
+        cart.tip = tip;
+        await cart.save();
 
-        // ✅ Calculate total
+        // ✅ Calculate subtotal, tax, total
         let subtotal = 0;
         cart.items.forEach((item) => (subtotal += item.price * item.quantity));
-        const tax = subtotal * 0.1; // 10% GST
-        const totalAmount = subtotal + tax + tip;
+        const taxRate = 0.12; // 10% GST
+        const tax = +(subtotal * taxRate).toFixed(2);
+        const totalAmount = +(subtotal + tax + tip).toFixed(2);
 
-        // ✅ Update booking details
-        booking.items = cart.items;
-        booking.subtotal = subtotal;
-        booking.tax = tax;
-        booking.tip = tip;
-        booking.totalAmount = totalAmount;
-        booking.paymentMethod = paymentMethod;
+        // ✅ Create booking with default paymentMethod as Razorpay
+        const booking = new Booking({
+            user: userId,
+            items: cart.items,
+            subtotal,
+            tax,
+            tip, // ✅ tip included here
+            totalAmount,
+            status: "Pending",
+            bookedAt: new Date(),
+            paymentMethod: "Razorpay", // ✅ default
+        });
 
-        // ✅ Case 1: COD
-        if (paymentMethod === "COD") {
-            booking.status = "Confirmed";
-            await booking.save();
-
-            // Clear cart
-            cart.items = [];
-            await cart.save();
-
-            return res.status(200).json({
-                success: true,
-                message: "Booking confirmed with Cash on Delivery.",
-                booking,
-            });
-        }
-
-        // ✅ Case 2: Razorpay
-        // Instead of creating order here, return booking info
-        // The frontend will then call your existing `/payment/order` endpoint
-        // to create a Razorpay order
-
-        booking.status = "Payment Pending";
         await booking.save();
 
+        // ✅ Return booking info
         return res.status(200).json({
             success: true,
-            message: "Proceed to Razorpay payment.",
+            message: "Booking created successfully.",
             bookingId: booking._id,
+            subtotal,
+            tax,
+            tip,
             totalAmount,
+            items: cart.items,
         });
     } catch (err) {
         console.error("Booking Error:", err);

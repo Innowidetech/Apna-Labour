@@ -10,6 +10,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 const HelpCenter = require('../models/HelpCenter');
 const acceptApplicantTemplate = require('../utils/acceptApplicantTemplate');
 const Booking = require('../models/Booking');
+const Review = require('../models/Review');
+const Dispute = require('../models/Dispute');
 
 const {
     Category,
@@ -980,6 +982,7 @@ exports.getBookingsByDate = async (req, res) => {
                         : "Unpaid";
 
             return {
+                _id: b._id,
                 bookingId: b.bookingId,
                 customer: customerName,
                 service: services,      // Correct service titles
@@ -1003,6 +1006,79 @@ exports.getBookingsByDate = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
+exports.getCustomerDetailsByBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        // 1️⃣ Find the booking
+        const booking = await Booking.findById(bookingId).lean();
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
+        const userId = booking.user;
+
+        // 2️⃣ Fetch User & Customer profile
+        const user = await User.findById(userId).select("-password").lean();
+        const profile = await Customer.findOne({ userId }).lean();
+
+        // 3️⃣ Fetch all bookings and populate unit titles
+        const allBookings = await Booking.find({ user: userId })
+            .populate({
+                path: 'items.unit',
+                select: 'title', // fetch only the title field
+                model: 'Unit'
+            })
+            .lean();
+
+        // 4️⃣ Summary
+        const totalBookings = allBookings.length;
+        const totalAmountSpent = allBookings.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
+        const reviews = await Review.find({ userId }).lean();
+        const averageRating =
+            reviews.length > 0
+                ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
+                : "0.0";
+        const disputesCount = await Dispute.countDocuments({ user: userId });
+        const availabilityStatus = user.isActive ? "Active" : "Inactive";
+
+        // 5️⃣ Booking history with proper unit names
+        const bookingHistory = allBookings.map(b => ({
+            _id: b._id,
+            bookingId: b.bookingId,
+            items: b.items.map(item => ({
+                unit: item.unit ? item.unit.title : "Deleted Service",
+                quantity: item.quantity,
+                price: item.price
+            })),
+            totalAmount: b.totalAmount,
+            bookingDate: b.bookingDate,
+            status: b.status,
+            payment: b.paymentMethod === "Razorpay" ? `₹${b.totalAmount}` : b.paymentMethod
+        }));
+
+        res.status(200).json({
+            success: true,
+            customerDetails: {
+                user,
+                profile,
+                summary: {
+                    totalBookings,
+                    totalAmountSpent,
+                    averageRating,
+                    numberOfDisputes: disputesCount,
+                    availabilityStatus
+                }
+            },
+            bookingHistory
+        });
+
+    } catch (error) {
+        console.error("Get customer details error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
 
 exports.getTop4DemandingServicesByMonth = async (req, res) => {
     try {

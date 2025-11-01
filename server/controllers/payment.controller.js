@@ -129,13 +129,12 @@ exports.createPaymentOrder = async (req, res) => {
 // Verify Razorpay Payment
 exports.verifyPayment = async (req, res) => {
     try {
-        const { orderId, paymentId, signature } = req.body;
+        const { orderId, paymentId, signature, bookingId } = req.body;
 
         const payment = await Payment.findOne({ orderId });
         if (!payment)
             return res.status(404).json({ success: false, message: "Payment not found" });
 
-        // 🔹 Signature verification
         const expectedSignature = crypto
             .createHmac("sha256", process.env.RAZORPAY_SECRET_KEY)
             .update(orderId + "|" + paymentId)
@@ -145,33 +144,37 @@ exports.verifyPayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid payment signature" });
         }
 
-        // 🔹 Update payment
+        // Save bookingId if not already present
+        if (bookingId && !payment.bookingId) {
+            payment.bookingId = bookingId;
+        }
+
         payment.paymentId = paymentId;
         payment.signature = signature;
         payment.status = "paid";
         await payment.save();
 
-        // 🔹 Update booking
-        await Booking.findByIdAndUpdate(payment.bookingId, {
-            paymentStatus: "paid",
-            status: "Confirmed"
-        });
+        if (payment.bookingId) {
+            await Booking.findByIdAndUpdate(payment.bookingId, {
+                paymentStatus: "paid",
+                status: "Confirmed"
+            });
+        }
 
-        // 🔹 Clear user cart (empty items but keep document)
+        // Clear user cart
         await Cart.findOneAndUpdate(
             { userId: payment.userId },
-            { $set: { items: [] } } // ✅ just clear items array
+            { $set: { items: [] } }
         );
 
-        res.json({
-            success: true,
-            message: "Payment verified successfully, cart cleared",
-        });
+        res.json({ success: true, message: "Payment verified successfully, cart cleared" });
+
     } catch (error) {
         console.error("Verify Payment Error:", error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
 // Cancel Payment & Booking
 exports.cancelPayment = async (req, res) => {
     try {

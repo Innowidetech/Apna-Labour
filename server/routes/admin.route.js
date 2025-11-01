@@ -5,7 +5,7 @@ const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrain
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
     createHeroAppliance, markTrainingCompleted, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit, createNotificationForUser,
-    getAdminDashboard, getAdminProfile, getBookingsByDate, getTop4DemandingServicesByMonth,
+    getAdminDashboard, getAdminProfile, getBookingsByDate, getTop4DemandingServicesByMonth, getCustomerDetailsByBooking,
     getFilteredCustomers } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -50,6 +50,7 @@ router.get("/contacts", protect, authorize("Admin"), getContacts);
 router.get("/dashboard", protect, authorize("Admin"), getAdminDashboard);
 router.get('/profile', protect, getAdminProfile);
 router.get("/bookings/by-date", protect, authorize("Admin"), getBookingsByDate);
+router.get('/booking/:bookingId/details', protect, authorize('Admin'), getCustomerDetailsByBooking);
 router.get("/most-demanding-services", protect, authorize("Admin"), getTop4DemandingServicesByMonth);
 router.get("/all/customers/filter", protect, authorize("Admin"), getFilteredCustomers);
 
