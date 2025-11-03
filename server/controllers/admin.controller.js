@@ -8,10 +8,13 @@ const Notification = require('../models/Notification');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const HelpCenter = require('../models/HelpCenter');
-const acceptApplicantTemplate = require('../utils/acceptApplicantTemplate');
+const acceptedTrainingMail = require('../utils/acceptedTrainingMail');
 const Booking = require('../models/Booking');
 const Review = require('../models/Review');
 const Dispute = require('../models/Dispute');
+const AcceptedService = require('../models/AcceptedService');
+const AcceptedSkill = require('../models/AcceptedSkill');
+const suspensionMail = require('../utils/suspensionMail');
 
 const {
     Category,
@@ -93,7 +96,7 @@ exports.approveLabourerRegistrationAndSendTrainingDetails = async (req, res) => 
         await trainingDetails.save();
 
         // Prepare email content
-        const emailHTML = acceptApplicantTemplate(labourer.userId.name, {
+        const emailHTML = acceptedTrainingMail(labourer.userId.name, {
             startDate,
             endDate,
             timings,
@@ -1322,6 +1325,606 @@ exports.getFilteredCustomers = async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Error fetching customers",
+            error: error.message,
+        });
+    }
+};
+
+//   Get all Professional labourers (training completed)
+exports.getProfessionalLabourers = async (req, res) => {
+    try {
+        const { categoryId } = req.query;
+
+        // 1️⃣ Base filter — Professional with completed training
+        const filter = {
+            registrationType: "Professional",
+            trainingStatus: "Completed"
+        };
+
+        if (categoryId) {
+            filter.category = categoryId;
+        }
+
+        // 2️⃣ Fetch labourers with populated details
+        const professionals = await Labourer.find(filter)
+            .populate("userId", "-password -otp -otpExpiry -googleId -__v") // full user details
+            .populate("category", "title image");
+
+        if (professionals.length === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                data: []
+            });
+        }
+
+        // 3️⃣ Extract labourer IDs
+        const labourerIds = professionals.map(l => l._id);
+
+        // 4️⃣ Get average ratings for each labourer
+        const ratingsData = await Review.aggregate([
+            {
+                $match: {
+                    targetType: "Labourer",
+                    targetId: { $in: labourerIds }
+                }
+            },
+            {
+                $group: {
+                    _id: "$targetId",
+                    averageRating: { $avg: "$rating" },
+                    totalReviews: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 5️⃣ Get completed jobs count for each labourer
+        const completedJobsData = await Booking.aggregate([
+            {
+                $match: {
+                    labourer: { $in: labourerIds },
+                    status: "Completed"
+                }
+            },
+            {
+                $group: {
+                    _id: "$labourer",
+                    completedJobsCount: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 6️⃣ Create maps for quick lookup
+        const ratingMap = {};
+        ratingsData.forEach(r => {
+            ratingMap[r._id.toString()] = {
+                averageRating: Number(r.averageRating.toFixed(1)),
+                totalReviews: r.totalReviews
+            };
+        });
+
+        const completedMap = {};
+        completedJobsData.forEach(c => {
+            completedMap[c._id.toString()] = c.completedJobsCount;
+        });
+
+        // 7️⃣ Merge all data (keep original structure + add userId as separate field)
+        const result = professionals.map(p => {
+            const id = p._id.toString();
+            const labourerObj = p.toObject();
+
+            return {
+                ...labourerObj, // keep all existing fields (like your sample)
+                userId: p.userId?._id || null, // ✅ add userId separately
+                userDetails: p.userId || {}, // ✅ keep full user details nested too (optional)
+                averageRating: ratingMap[id]?.averageRating || 0,
+                totalReviews: ratingMap[id]?.totalReviews || 0,
+                completedJobsCount: completedMap[id] || p.completedJobs || 0
+            };
+        });
+
+        // ✅ Final response
+        res.status(200).json({
+            success: true,
+            count: result.length,
+            data: result
+        });
+
+    } catch (error) {
+        console.error("Error fetching professional labourers:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message
+        });
+    }
+};
+
+//   Get all Individual labourers (training completed)
+exports.getIndividualLabourers = async (req, res) => {
+    try {
+        const { skill } = req.query;
+
+        const filter = {
+            registrationType: "Individual",
+            trainingStatus: "Completed"
+        };
+
+        if (skill) filter.skill = skill;
+
+        // Fetch labourers with full user details
+        const individuals = await Labourer.find(filter)
+            .populate("userId", "-password -otp -otpExpiry -googleId");
+
+        if (individuals.length === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                data: []
+            });
+        }
+
+        // IDs for ratings and completed jobs
+        const labourerIds = individuals.map(l => l._id);
+
+        const ratingsData = await Review.aggregate([
+            { $match: { targetType: "Labourer", targetId: { $in: labourerIds } } },
+            { $group: { _id: "$targetId", averageRating: { $avg: "$rating" }, totalReviews: { $sum: 1 } } }
+        ]);
+
+        const completedJobsData = await Booking.aggregate([
+            { $match: { labourer: { $in: labourerIds }, status: "Completed" } },
+            { $group: { _id: "$labourer", completedJobsCount: { $sum: 1 } } }
+        ]);
+
+        // Lookup maps
+        const ratingMap = {};
+        ratingsData.forEach(r => {
+            ratingMap[r._id.toString()] = {
+                averageRating: Number(r.averageRating.toFixed(1)),
+                totalReviews: r.totalReviews
+            };
+        });
+
+        const completedMap = {};
+        completedJobsData.forEach(c => {
+            completedMap[c._id.toString()] = c.completedJobsCount;
+        });
+
+        // Merge all data and include direct userId
+        const result = individuals.map(p => {
+            const id = p._id.toString();
+            const obj = p.toObject();
+
+            return {
+                ...obj,
+                userId: p.userId?._id || null, // ✅ direct userId
+                averageRating: ratingMap[id]?.averageRating || 0,
+                totalReviews: ratingMap[id]?.totalReviews || 0,
+                completedJobsCount: completedMap[id] || p.completedJobs || 0
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            count: result.length,
+            data: result
+        });
+
+    } catch (error) {
+        console.error("Error fetching individual labourers:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message
+        });
+    }
+};
+
+//  Get all Team labourers (training completed)
+exports.getTeamLabourers = async (req, res) => {
+    try {
+        const { skill } = req.query;
+
+        const filter = {
+            registrationType: "Team",
+            trainingStatus: "Completed"
+        };
+
+        if (skill) filter.skill = skill;
+
+        // Fetch team labourers with populated user and category info
+        const teams = await Labourer.find(filter)
+            .populate("userId", "-password -otp -otpExpiry -googleId")
+            .populate("category", "title image");
+
+        if (teams.length === 0) {
+            return res.status(200).json({
+                success: true,
+                count: 0,
+                data: []
+            });
+        }
+
+        // Labourer IDs for aggregation
+        const labourerIds = teams.map(l => l._id);
+
+        // Get ratings
+        const ratingsData = await Review.aggregate([
+            { $match: { targetType: "Labourer", targetId: { $in: labourerIds } } },
+            { $group: { _id: "$targetId", averageRating: { $avg: "$rating" }, totalReviews: { $sum: 1 } } }
+        ]);
+
+        // Get completed jobs
+        const completedJobsData = await Booking.aggregate([
+            { $match: { labourer: { $in: labourerIds }, status: "Completed" } },
+            { $group: { _id: "$labourer", completedJobsCount: { $sum: 1 } } }
+        ]);
+
+        // Lookup maps
+        const ratingMap = {};
+        ratingsData.forEach(r => {
+            ratingMap[r._id.toString()] = {
+                averageRating: Number(r.averageRating.toFixed(1)),
+                totalReviews: r.totalReviews
+            };
+        });
+
+        const completedMap = {};
+        completedJobsData.forEach(c => {
+            completedMap[c._id.toString()] = c.completedJobsCount;
+        });
+
+        // Merge data and include direct userId
+        const result = teams.map(p => {
+            const id = p._id.toString();
+            const obj = p.toObject();
+
+            return {
+                ...obj,
+                userId: p.userId?._id || null, // ✅ direct userId
+                averageRating: ratingMap[id]?.averageRating || 0,
+                totalReviews: ratingMap[id]?.totalReviews || 0,
+                completedJobsCount: completedMap[id] || p.completedJobs || 0
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            count: result.length,
+            data: result
+        });
+
+    } catch (error) {
+        console.error("Error fetching team labourers:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message
+        });
+    }
+};
+
+exports.getProfessionalLabourerDetails = async (req, res) => {
+    try {
+        const { userId } = req.params; // ✅ Take userId instead of labourerId
+
+        // 1️⃣ Find the Labourer by userId
+        const user = await User.findById(userId).select("-password -otp -otpExpiry -googleId");
+        const labourer = await Labourer.findOne({ userId })
+            .populate("userId", "-password -otp -otpExpiry -googleId")
+            .populate("category", "title image");
+
+        if (!labourer) {
+            return res.status(404).json({
+                success: false,
+                message: "Labourer not found for this user ID",
+            });
+        }
+
+        // 2️⃣ OVERVIEW SECTION
+        const overview = {
+            userId: labourer.userId?._id || null,
+            status: user.isActive,
+            suspended: user.isSuspended,
+            name: labourer.userId?.name,
+            email: labourer.userId?.email,
+            mobileNumber: labourer.userId?.mobileNumber,
+            category: labourer.category || null,
+            registrationType: labourer.registrationType,
+            serviceCity: labourer.serviceCity,
+            address: labourer.address,
+            image: labourer.image,
+            cost: labourer.cost,
+            experience: labourer.experience,
+            aadhar: labourer.aadhar,
+            trainingStatus: labourer.trainingStatus,
+            createdAt: labourer.createdAt,
+        };
+
+        // 3️⃣ SERVICES SECTION
+        const acceptedServices = await AcceptedService.find({ labourer: labourer._id })
+            .populate("categories", "title image")
+            .populate("subCategories", "title")
+            .populate("serviceTypes", "name");
+
+        const services = acceptedServices.map(service => ({
+            categories: service.categories,
+            subCategories: service.subCategories,
+            serviceTypes: service.serviceTypes,
+            approvedDate: service.approvedDate,
+            status: service.status,
+            remarks: service.remarks,
+            bookingFee: service.bookingFee,
+        }));
+
+        // 4️⃣ RATINGS SECTION
+        const ratingsData = await Review.aggregate([
+            { $match: { targetType: "Labourer", targetId: labourer._id } },
+            {
+                $group: {
+                    _id: "$targetId",
+                    averageRating: { $avg: "$rating" },
+                    totalReviews: { $sum: 1 },
+                },
+            },
+        ]);
+
+        const ratingStats = ratingsData[0] || { averageRating: 0, totalReviews: 0 };
+
+        const ratingSection = {
+            averageRating: Number(ratingStats.averageRating.toFixed(1)),
+            totalReviews: ratingStats.totalReviews,
+            completedJobs: labourer.completedJobs || 0,
+            complaints: labourer.complants || 0,
+            acceptedJobs: labourer.acceptedJobs || 0,
+            trainingScore: labourer.traingScore || 0,
+            completionRate: `${labourer.completedJobs > 0
+                ? ((labourer.completedJobs / (labourer.acceptedJobs || 1)) * 100).toFixed(1)
+                : 0
+                }%`,
+        };
+
+        // 5️⃣ PAYMENTS SECTION
+        const bookings = await Booking.find({ "items.unit": labourer._id })
+            .select("bookingId totalAmount paymentMethod status createdAt");
+
+        const totalBookings = bookings.length;
+        const completedBookings = bookings.filter(b => b.status === "Completed").length;
+        const pendingPayments = bookings.filter(b => b.status === "Payment Pending").length;
+
+        const payments = {
+            totalBookings,
+            completedBookings,
+            pendingPayments,
+            recentBookings: bookings.slice(-5),
+        };
+
+        // ✅ Final Response
+        res.status(200).json({
+            success: true,
+            overview,
+            services,
+            ratingSection,
+            payments,
+        });
+
+    } catch (error) {
+        console.error("Error fetching labourer details by userId:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message,
+        });
+    }
+};
+exports.getIndividualTeamLabourerDetails = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        // 1️⃣ Fetch User & Labourer (only Individual or Team)
+        const user = await User.findById(userId).select("-password -otp -otpExpiry -googleId");
+        const labourer = await Labourer.findOne({
+            userId,
+            registrationType: { $in: ["Individual", "Team"] },
+        }).populate("userId", "-password -otp -otpExpiry -googleId");
+
+        if (!labourer) {
+            return res.status(404).json({
+                success: false,
+                message: "Individual or Team labourer not found for this user ID",
+            });
+        }
+
+        // 2️⃣ OVERVIEW SECTION (same as professional structure)
+        const overview = {
+            userId: labourer.userId?._id,
+            status: user.isActive,
+            suspended: user.isSuspended,
+            name: labourer.userId?.name,
+            email: labourer.userId?.email,
+            mobileNumber: labourer.userId?.mobileNumber,
+            // for individuals & teams there’s no category
+            category: null,
+            registrationType: labourer.registrationType,
+            serviceCity: labourer.serviceCity,
+            address: labourer.address,
+            image: labourer.image,
+            cost: labourer.cost,
+            experience: labourer.experience,
+            aadhar: labourer.aadhar,
+            trainingStatus: labourer.trainingStatus,
+            createdAt: labourer.createdAt,
+        };
+
+        // 3️⃣ SERVICES SECTION — from AcceptedSkill
+        const acceptedSkills = await AcceptedSkill.find({ labourer: labourer.userId })
+            .select("skills status approvedDate remarks registrationFee");
+
+        const services = acceptedSkills.map(skillDoc => ({
+            _id: skillDoc._id,
+            skills: skillDoc.skills,
+            status: skillDoc.status,
+            approvedDate: skillDoc.approvedDate,
+            remarks: skillDoc.remarks,
+            registrationFee: skillDoc.registrationFee,
+        }));
+
+        // fallback if no AcceptedSkill record
+        if (services.length === 0) {
+            services.push({
+                _id: null,
+                skills: [labourer.skill || "Not specified"],
+                status: "Pending",
+                approvedDate: null,
+                remarks: "Not yet approved",
+                registrationFee: 0,
+            });
+        }
+
+        // 4️⃣ RATING SECTION (same structure)
+        const ratingsData = await Review.aggregate([
+            { $match: { targetType: "Labourer", targetId: labourer._id } },
+            {
+                $group: {
+                    _id: "$targetId",
+                    averageRating: { $avg: "$rating" },
+                    totalReviews: { $sum: 1 },
+                },
+            },
+        ]);
+
+        const ratingStats = ratingsData[0] || { averageRating: 0, totalReviews: 0 };
+        const ratingSection = {
+            averageRating: Number(ratingStats.averageRating.toFixed(1)),
+            totalReviews: ratingStats.totalReviews,
+            completedJobs: labourer.completedJobs || 0,
+            complaints: labourer.complants || 0,
+            acceptedJobs: labourer.acceptedJobs || 0,
+            trainingScore: labourer.traingScore || 70,
+            completionRate: `${labourer.completedJobs > 0
+                ? ((labourer.completedJobs / (labourer.acceptedJobs || 1)) * 100).toFixed(1)
+                : 0
+                }%`,
+        };
+
+        // 5️⃣ PAYMENTS SECTION (same as professional)
+        const bookings = await Booking.find({ "items.unit": labourer._id })
+            .select("bookingId totalAmount paymentMethod status createdAt");
+
+        const totalBookings = bookings.length;
+        const completedBookings = bookings.filter(b => b.status === "Completed").length;
+        const pendingPayments = bookings.filter(b => b.status === "Payment Pending").length;
+
+        const payments = {
+            totalBookings,
+            completedBookings,
+            pendingPayments,
+            recentBookings: bookings.slice(-5),
+        };
+
+        // ✅ FINAL RESPONSE (same structure and order)
+        res.status(200).json({
+            success: true,
+            overview,
+            services,
+            ratingSection,
+            payments,
+        });
+
+    } catch (error) {
+        console.error("Error fetching Individual/Team labourer details:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message,
+        });
+    }
+};
+
+exports.getSuspendedAccounts = async (req, res) => {
+    try {
+        // 1️⃣ Find all suspended users
+        const suspendedUsers = await User.find({ isSuspended: true })
+            .select("-password -otp -otpExpiry -googleId"); // hide sensitive fields
+
+        // 2️⃣ Get labourer details for those users (if any)
+        const userIds = suspendedUsers.map(u => u._id);
+        const labourers = await Labourer.find({ userId: { $in: userIds } })
+            .populate("category", "title image") // optional populate for category
+            .lean();
+
+        // 3️⃣ Merge user + labourer info
+        const suspendedAccounts = suspendedUsers.map(user => {
+            const labourer = labourers.find(l => l.userId.toString() === user._id.toString());
+            return {
+                user,
+                labourer: labourer || null
+            };
+        });
+
+        // 4️⃣ Send response
+        return res.status(200).json({
+            success: true,
+            count: suspendedAccounts.length,
+            suspendedAccounts
+        });
+    } catch (error) {
+        console.error("Error fetching suspended accounts:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error while fetching suspended accounts",
+            error: error.message
+        });
+    }
+};
+exports.suspendLabour = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { reason } = req.body;
+
+        if (!reason) {
+            return res.status(400).json({
+                success: false,
+                message: "Suspension reason is required",
+            });
+        }
+
+        // 1️⃣ Find the user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        // 2️⃣ Update suspension status
+        user.isSuspended = true;
+        await user.save();
+
+        // 3️⃣ Send email
+        await sendEmail(
+            user.email,
+            "Your Apna Labour Account has been Suspended",
+            suspensionMail(reason)
+        );
+
+        // 4️⃣ Response
+        return res.status(200).json({
+            success: true,
+            message: "User suspended and email sent successfully",
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                isSuspended: user.isSuspended,
+            },
+        });
+
+    } catch (error) {
+        console.error("Error suspending user:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while suspending user",
             error: error.message,
         });
     }

@@ -6,7 +6,9 @@ const { getAllUsers, approveLabourerRegistrationAndSendTrainingDetails, getTrain
     delServiceType, getAllLabourers, acceptApplicant, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
     createHeroAppliance, markTrainingCompleted, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit, createNotificationForUser,
     getAdminDashboard, getAdminProfile, getBookingsByDate, getTop4DemandingServicesByMonth, getCustomerDetailsByBooking,
-    getFilteredCustomers } = require('../controllers/admin.controller');
+    getFilteredCustomers, getProfessionalLabourers, getIndividualLabourers, getTeamLabourers, getProfessionalLabourerDetails,
+    getIndividualTeamLabourerDetails, getSuspendedAccounts, suspendLabour
+} = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
 const upload = multer({ storage: multer.memoryStorage() });
@@ -53,6 +55,13 @@ router.get("/bookings/by-date", protect, authorize("Admin"), getBookingsByDate);
 router.get('/booking/:bookingId/details', protect, authorize('Admin'), getCustomerDetailsByBooking);
 router.get("/most-demanding-services", protect, authorize("Admin"), getTop4DemandingServicesByMonth);
 router.get("/all/customers/filter", protect, authorize("Admin"), getFilteredCustomers);
+router.get("/labourers/professional/:userId", protect, authorize("Admin"), getProfessionalLabourerDetails);
+router.get("/labourer/individual-team/:userId", protect, authorize("Admin"), getIndividualTeamLabourerDetails);
+router.get("/suspended-accounts", protect, authorize("Admin"), getSuspendedAccounts);
+router.put("/toggle-suspend/:userId", protect, authorize("Admin"), suspendLabour);
 
+router.get("/professional", getProfessionalLabourers);
+router.get("/individual", getIndividualLabourers);
+router.get("/team", getTeamLabourers);
 
 module.exports = router;

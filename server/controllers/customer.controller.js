@@ -150,7 +150,7 @@ exports.createOrAddReview = async (req, res) => {
 exports.addToCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.userId : null;
-        let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
+        let guestId = req.headers["x-guest-id"]; //  read from frontend header
 
         // Create guestId if not logged in
         if (!userId && !guestId) {
@@ -378,7 +378,7 @@ exports.removeFromCart = async (req, res) => {
         const cart = await Cart.findOne(query);
 
         if (!cart) {
-            return res.status(404).json({ message: "Cart not found" });
+            return res.status(404).json({ message: "  not found" });
         }
 
         // Remove the item
