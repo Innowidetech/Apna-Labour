@@ -3,7 +3,7 @@ import AccountSidebar from "./AccountSidebar";
 
 import Account from "./Account";
 import Bookings from "./Bookings";
-import Payments from "./Payments";
+import Payments from "../Payments";
 import MyRatingsReviews from "./MyRatingsReviews";
 import Notifications from "./Notifications";
 import HelpCenter from "./HelpCenter";

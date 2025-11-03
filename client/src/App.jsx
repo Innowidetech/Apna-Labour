@@ -1,17 +1,24 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useLocation,
+  Navigate,
+} from "react-router-dom";
+
 import appRoutes from "./routes/appRoutes";
 
 // Components
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
-
-// Account Pages
-import Account from "./pages/Account/Account";
-import AccountSidebar from "./pages/Account/AccountSidebar";
-import AccountLayout from "./pages/Account/AccountLayout";
+import PrivateRoute from "./components/PrivateRoute"; // ✅ import your PrivateRoute
+import AdminLogin from "./Auth/AdminLogin";
+import ForgotPassword from "./Auth/ForgotPassword";
 import MainAccount from "./pages/Account/MainAccount";
-import Bookings from "./pages/Account/Bookings";
+
+// Admin Dashboard
+import MainDashboard from "./components/adminDashboard/MainDashboard"; // ✅ admin main dashboard
 
 // Other Pages
 import Home from "./pages/Home";
@@ -28,6 +35,7 @@ import Gyser from "./pages/Gyser";
 import Appliances from "./pages/Appliances";
 import Login from "./Auth/Login";
 import ViewCart from "./pages/ViewCart";
+import Payments from "./pages/Payments";
 import CartPage from "./pages/CartPage";
 import Checkout from "./pages/Checkout";
 import ServicePage from "./pages/ServiceDetails";
@@ -37,25 +45,45 @@ import WorkerZone from "./pages/WorkerZone";
 import ContactUs from "./pages/ContactUs";
 import LabourCart from "./pages/LabourCart";
 import TeamLabourCart from "./pages/TeamLabourCart";
-
+import Verification from "./Auth/Verification";
+import TermsCondition from "./pages/TermsCondition";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 
 // ✅ Layout Component
 function Layout({ children }) {
   const location = useLocation();
-  const noLayoutRoutes = ["/login", "/viewcart"];
-  const hideLayout = noLayoutRoutes.includes(location.pathname);
+  const noLayoutRoutes = [
+    "/login",
+    "/viewcart",
+    "/contactus",
+    "/admin-login",
+    "/admin",
+  ];
+
+  const hideLayout = noLayoutRoutes.some((path) =>
+    location.pathname.startsWith(path)
+  );
 
   return (
     <>
       {!hideLayout && <Navbar />}
       <div className={!hideLayout ? "pt-16" : ""}>
         <Routes>
-          {/* App routes from centralized config */}
+          {/* ✅ Admin Protected Routes */}
+          <Route
+            path="/admin/*"
+            element={
+              <PrivateRoute>
+                <MainDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          {/* ✅ Public Routes */}
           {appRoutes.map((route, index) => (
             <Route key={index} path={route.path} element={route.element} />
           ))}
 
-          {/* Static Routes */}
           <Route path="/" element={<Home />} />
           <Route path="/casual" element={<Casual />} />
           <Route path="/electrician" element={<Electrician />} />
@@ -69,33 +97,38 @@ function Layout({ children }) {
           <Route path="/gyser" element={<Gyser />} />
           <Route path="/appliances" element={<Appliances />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/admin-login" element={<AdminLogin />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/verify" element={<Verification />} />
           <Route path="/viewcart" element={<ViewCart />} />
+          <Route path="/payments" element={<Payments />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/workerzone" element={<WorkerZone />} />
           <Route path="/contactus" element={<ContactUs />} />
+          <Route path="/terms-condition" element={<TermsCondition />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/service/:id" element={<ServicePage />} />
           <Route path="/services/:id" element={<ModalServicePage />} />
 
-          {/* Account Section */}
-         
+          {/* ✅ Account Section */}
           <Route path="/account/*" element={<MainAccount />} />
-          
 
-          {/* Labour */}
+          {/* ✅ Labour */}
           <Route path="/labour-cart" element={<LabourCart />} />
           <Route path="/team-labour-cart" element={<TeamLabourCart />} />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
-        {/* Allow nested children */}
         {children}
       </div>
       {!hideLayout && <Footer />}
     </>
   );
 }
-
 
 // ✅ Main App Component
 function App() {

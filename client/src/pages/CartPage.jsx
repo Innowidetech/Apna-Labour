@@ -14,12 +14,14 @@ const CartPage = () => {
   );
   const [loading, setLoading] = useState(!initialCart);
   const [error, setError] = useState(null);
+
   // Auth/Login states
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [emailMobile, setEmailMobile] = useState("");
   const [otp, setOtp] = useState("");
   const [userId, setUserId] = useState("");
   const [step, setStep] = useState("login"); // "login", "otp", "next"
+
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [addressSaved, setAddressSaved] = useState(false);
   const [slotDate, setSlotDate] = useState("");
@@ -27,6 +29,8 @@ const CartPage = () => {
   const [slotBooked, setSlotBooked] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [slotModalOpen, setSlotModalOpen] = useState(false);
+  const [tip, setTip] = useState("");
+
   const [addressData, setAddressData] = useState({
     name: "",
     phoneNumber: "",
@@ -40,22 +44,32 @@ const CartPage = () => {
     "address.state": "",
   });
 
+  // 🛒 Fetch Cart
   const fetchCart = async () => {
     try {
-      setLoading(true);
-      setError(null);
-
       const token = localStorage.getItem("token");
       const guestId = localStorage.getItem("guestId");
 
-      const res = await fetch("https://apnalabour.onrender.com/api/customer/cart", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...(guestId && { "x-guest-id": guestId }),
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      });
+      if (!token && !guestId) {
+        setCartItems([]);
+        setTotalPrice(0);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch(
+        "https://apnalabour.onrender.com/api/customer/cart",
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...(guestId && { "x-guest-id": guestId }),
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        }
+      );
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
@@ -74,22 +88,19 @@ const CartPage = () => {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      setShowLoginForm(false); // ✅ hide login if already logged in
-    }
-
     if (!initialCart) {
       fetchCart();
     }
   }, []);
-  const handleDelete = async (unitId) => {
+
+  // 🗑 Delete Item
+  const handleDelete = async (cartItemId) => {
     try {
       const token = localStorage.getItem("token");
       const guestId = localStorage.getItem("guestId");
 
       const res = await fetch(
-        `https://apnalabour.onrender.com/api/customer/cart/remove/${unitId}`,
+        `https://apnalabour.onrender.com/api/customer/cart/remove/${cartItemId}`,
         {
           method: "DELETE",
           headers: {
@@ -102,6 +113,7 @@ const CartPage = () => {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+
       toast.success("Item removed successfully");
       fetchCart();
     } catch (err) {
@@ -109,6 +121,7 @@ const CartPage = () => {
     }
   };
 
+  // 🔐 Login
   const handleLogin = async () => {
     if (!emailMobile.trim()) {
       toast.error("Please enter your mobile number");
@@ -134,11 +147,14 @@ const CartPage = () => {
       toast.error(err.message || "Login failed");
     }
   };
+
+  // 🔑 Verify OTP + Merge Guest Cart
   const handleVerifyOtp = async () => {
     if (!otp.trim()) {
       toast.error("Please enter the OTP");
       return;
     }
+
     try {
       const res = await fetch("https://apnalabour.onrender.com/api/auth/verify-otp", {
         method: "POST",
@@ -151,16 +167,43 @@ const CartPage = () => {
 
       if (data.token) {
         localStorage.setItem("token", data.token);
-        setShowLoginForm(false); // ✅ hide login box after success
+        const guestId = localStorage.getItem("guestId");
+
+        // Merge guest cart
+        if (guestId) {
+          try {
+            const mergeRes = await fetch(
+              "https://apnalabour.onrender.com/api/customer/cart/merge",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${data.token}`,
+                },
+                body: JSON.stringify({ guestId }),
+              }
+            );
+
+            const mergeData = await mergeRes.json();
+            if (!mergeRes.ok) throw new Error(mergeData.message);
+
+            localStorage.removeItem("guestId");
+            toast.success("Cart merged successfully!");
+          } catch (mergeErr) {
+            console.warn("Cart merge failed:", mergeErr);
+          }
+        }
       }
+
       toast.success("OTP verified, login successful!");
       setStep("next");
-      fetchCart();
+      await fetchCart();
     } catch (err) {
       toast.error(err.message || "OTP verification failed");
     }
   };
 
+  // 📍 Save Address
   const handleAddressSubmit = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -184,11 +227,13 @@ const CartPage = () => {
       toast.success("Address saved successfully!");
       setAddressModalOpen(false);
       setAddressSaved(true);
+      fetchCart();
     } catch (err) {
       toast.error(err.message || "Failed to save address");
     }
   };
-  // --- Slot Booking ---
+
+  // 📅 Slot Booking
   const handleBookSlot = async () => {
     if (!slotDate || !slotTime) {
       toast.error("Please select date and time slot");
@@ -219,7 +264,7 @@ const CartPage = () => {
       );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(data.message || "Failed to book slot");
 
       toast.success("Slot booked successfully!");
       setSlotBooked(true);
@@ -229,11 +274,10 @@ const CartPage = () => {
       setBookingLoading(false);
     }
   };
-  const [profileData, setProfileData] = useState(null)
-  const [profileLoading, setProfileLoading] = useState(false);
-  const handleProceedCheckout = async () => {
+
+  // 💰 Create Booking with Tip
+  const handleCreateBooking = async () => {
     try {
-      setProfileLoading(true);
       const token = localStorage.getItem("token");
       if (!token) {
         toast.error("Please login first!");
@@ -241,34 +285,35 @@ const CartPage = () => {
       }
 
       const res = await fetch(
-        "https://apnalabour.onrender.com/api/customer/profile/name",
+        "https://apnalabour.onrender.com/api/customer/bookings/create",
         {
-          method: "GET",
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
+          body: JSON.stringify({ tip: Number(tip) || 0 }),
         }
       );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(data.message || "Failed to create booking");
 
-      // Navigate to checkout page with fetched profile data
-      navigate("/checkout", { state: { profileData: data.profile } });
+      toast.success("Booking created successfully!");
+      navigate("/checkout", { state: { booking: data.booking } });
     } catch (err) {
-      toast.error(err.message || "Failed to fetch profile data");
-    } finally {
-      setProfileLoading(false);
+      toast.error(err.message || "Failed to create booking");
     }
   };
+
   return (
     <div className="min-h-screen bg-white flex flex-col lg:flex-row p-4 lg:p-10 relative">
       {/* Left Section */}
       <div className="w-full lg:w-1/2 flex flex-col items-center pt-10 pb-6 px-4 lg:px-10">
         <h1 className="text-2xl font-cursive mb-6">Apna Labour</h1>
 
-        {!localStorage.getItem("token") && !showLoginForm ? (
+        {/* Login Section */}
+        {!showLoginForm ? (
           <div className="p-2 w-full max-w-xl text-left flex items-center gap-2 flex-wrap border border-gray-200 rounded-lg">
             <p className="mb-0 text-base flex-1">
               Login to book the service from your existing bag.
@@ -280,10 +325,7 @@ const CartPage = () => {
               LOGIN NOW
             </button>
           </div>
-        ) : null}
-
-        {/* ✅ Show login form only if no token */}
-        {showLoginForm && !localStorage.getItem("token") && (
+        ) : (
           <div className="p-6 w-full max-w-xl">
             {step === "login" && (
               <>
@@ -309,7 +351,6 @@ const CartPage = () => {
 
             {step === "otp" && (
               <>
-
                 <h2 className="text-lg mb-6 text-left">Verify OTP</h2>
                 <input
                   type="text"
@@ -330,76 +371,74 @@ const CartPage = () => {
             {step === "next" && (
               <>
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 w-full max-w-md mx-auto">
-                  {/* Header */}
                   <div className="border-b border-gray-100 pb-3 mb-4">
-                    <h2 className="text-sm font-medium text-gray-800 mb-1">Send booking details to</h2>
-                    <p className="text-gray-600 text-sm">+91- 8098749932</p>
+                    <h2 className="text-sm font-medium text-gray-800 mb-1">
+                      Send booking details to
+                    </h2>
+                    <p className="text-gray-600 text-sm">+91-{emailMobile}</p>
                   </div>
 
-                  {/* Address Section */}
+                  {/* Address */}
                   <div className="border-b border-gray-100 py-4">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-gray-500 text-lg">📍</span>
                       <h3 className="text-gray-800 text-sm font-medium">Address</h3>
                     </div>
                     <button
-                      className="w-full bg-[#001F3F] text-white py-2 rounded-md font-medium text-sm transition-colors hover:bg-[#002c5c] active:bg-[#003049]"
+                      className="w-full bg-[#001F3F] text-white py-2 rounded-md font-medium text-sm"
                       onClick={() => setAddressModalOpen(true)}
                     >
                       Register an address
                     </button>
                   </div>
 
-                  {/* Slot Booking Section */}
+                  {/* Slot */}
                   <div className="border-b border-gray-100 py-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-gray-500 text-lg ]">📅</span>
+                      <span className="text-gray-500 text-lg">📅</span>
                       <h3 className="text-gray-800 text-sm font-medium">Slot booking</h3>
                     </div>
                     <button
-                      className="w-full bg-[#003049] text-white py-2 rounded-md font-medium text-sm transition-colors active:bg-[#003049] active:text-white"
+                      className="w-full bg-[#003049] text-white py-2 rounded-md font-medium text-sm"
                       onClick={() => setSlotModalOpen(true)}
                     >
                       Book now
                     </button>
                   </div>
 
-                  {/* Payment Method Section */}
+                  {/* Tip */}
+                  <div className="border-b border-gray-100 py-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-gray-500 text-lg">💰</span>
+                      <h3 className="text-gray-800 text-sm font-medium">
+                        Add a Tip (optional)
+                      </h3>
+                    </div>
+                    <input
+                      type="number"
+                      placeholder="Enter tip amount"
+                      value={tip}
+                      onChange={(e) => setTip(e.target.value)}
+                      className="border px-3 py-2 rounded-md w-full"
+                    />
+                  </div>
+
+                  {/* Payment */}
                   <div className="py-4">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-gray-500 text-lg">💳</span>
-                      <h3 className="text-gray-800 text-sm font-medium">Payment method</h3>
+                      <h3 className="text-gray-800 text-sm font-medium">
+                        Payment method
+                      </h3>
                     </div>
 
                     <button
-                      className="w-full mt-6 text-white py-2 rounded-md font-medium bg-[#003049] hover:bg-[#002b4c] active:bg-[#003049]"
-                      onClick={handleProceedCheckout}
-                      disabled={profileLoading}
+                      className="w-full mt-6 text-white py-2 rounded-md font-medium bg-[#003049] hover:bg-[#002b4c]"
+                      onClick={handleCreateBooking}
                     >
-                      {profileLoading ? "Loading..." : "Proceed to checkout"}
+                      Proceed to checkout
                     </button>
-
-
-                    {profileData && (
-                      <div className="mt-4 bg-white border rounded-lg p-4 text-sm shadow-sm">
-                        <h4 className="font-semibold text-gray-800 mb-2">Profile Details</h4>
-                        <p><span className="font-medium">Name:</span> {profileData.name || "N/A"}</p>
-                        <p><span className="font-medium">Email:</span> {profileData.email || "N/A"}</p>
-                        <p><span className="font-medium">Phone:</span> {profileData.phoneNumber || "N/A"}</p>
-                      </div>
-                    )}
-
-
                   </div>
-                </div>
-
-                {/* Cancellation Policy */}
-                <div className="mt-6 max-w-md mx-auto">
-                  <h4 className="text-gray-800 text-sm font-medium mb-2">Cancellation Policy</h4>
-                  <p className="text-gray-500 text-sm leading-relaxed">
-                    Free cancellation if done more than 12hrs before the service or a professional isn’t assigned.
-                    A fee will be charged otherwise.
-                  </p>
                 </div>
               </>
             )}
@@ -407,24 +446,8 @@ const CartPage = () => {
         )}
       </div>
 
-      {/* Right Section */}
+      {/* Right Section (Cart) */}
       <div className="w-full lg:w-1/2 p-4 lg:p-10 bg-[#CECECE26]">
-        {/* Progress Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between mb-6 text-sm text-gray-600 space-y-2 sm:space-y-0">
-          {["Cart", "Review", "Payment"].map((stepLabel, index) => (
-            <React.Fragment key={index}>
-              <div className="flex items-center">
-                <span className={`w-6 h-6 flex items-center justify-center rounded-full text-xs mr-2 ${index === 0 ? "bg-black text-white" : "border border-gray-400"
-                  }`}>
-                  {index + 1}
-                </span>
-                {stepLabel}
-              </div>
-              {index < 2 && <div className="hidden sm:block flex-1 h-px bg-gray-300 mx-2"></div>}
-            </React.Fragment>
-          ))}
-        </div>
-
         {loading && <p>Loading cart items...</p>}
         {error && <p className="text-red-500">{error}</p>}
         {!loading && !error && cartItems.length === 0 && <p>Your cart is empty.</p>}
@@ -442,9 +465,8 @@ const CartPage = () => {
                   >
                     <span className="w-full sm:w-1/2 mb-2 sm:mb-0">{title}</span>
                     <div className="flex w-full sm:w-1/2 justify-between items-center">
-
                       <button
-                        onClick={() => handleDelete(item.unit?.id || item.unit)}
+                        onClick={() => handleDelete(item._id)}
                         className="text-red-500 hover:text-red-700"
                       >
                         🗑
@@ -454,11 +476,8 @@ const CartPage = () => {
                   </div>
                 );
               })}
-              <button className="text-blue-500 text-sm">Add Another Service</button>
             </div>
-            <div className="bg-green-50 text-green-700 border border-green-200 rounded-lg p-3 mb-4 text-sm">
-              Don’t miss out <span className="font-semibold">login</span> to earn and redeem rewards
-            </div>
+
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h2 className="font-semibold mb-3">Payment Summary</h2>
               <div className="flex justify-between mb-1 text-sm">
@@ -469,26 +488,24 @@ const CartPage = () => {
                 <span>Taxes & Fee</span>
                 <span>₹189</span>
               </div>
+              <div className="flex justify-between mb-1 text-sm">
+                <span>Tip</span>
+                <span>₹{Number(tip) || 0}</span>
+              </div>
               <div className="flex justify-between font-semibold border-t pt-2 mt-2 text-sm">
                 <span>Total amount</span>
-                <span>₹{totalPrice + 189}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg mt-3">
-                <span>Amount to pay</span>
-                <span>₹{totalPrice + 189}</span>
+                <span>₹{totalPrice + 189 + (Number(tip) || 0)}</span>
               </div>
             </div>
           </>
         )}
       </div>
+
       {/* Address Modal */}
       {addressModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-          {/* Scrollable Modal Container */}
           <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto relative p-6 shadow-lg">
             <h2 className="text-xl font-bold mb-4">Register Address</h2>
-
-            {/* Close Button */}
             <button
               className="absolute top-3 right-4 text-gray-600 hover:text-black text-2xl"
               onClick={() => setAddressModalOpen(false)}
@@ -497,7 +514,6 @@ const CartPage = () => {
               &times;
             </button>
 
-            {/* Modal Content */}
             <div className="space-y-3">
               {Object.keys(addressData).map((key) => (
                 <input
@@ -522,12 +538,11 @@ const CartPage = () => {
         </div>
       )}
 
+      {/* Slot Modal */}
       {slotModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
           <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto relative p-6 shadow-lg">
             <h2 className="text-xl font-bold mb-4">Book Slot</h2>
-
-            {/* Close Button */}
             <button
               className="absolute top-3 right-4 text-gray-600 hover:text-black text-2xl"
               onClick={() => setSlotModalOpen(false)}
@@ -536,7 +551,6 @@ const CartPage = () => {
               &times;
             </button>
 
-            {/* Slot selection */}
             <div className="flex flex-col gap-3">
               <input
                 type="date"
@@ -569,8 +583,10 @@ const CartPage = () => {
           </div>
         </div>
       )}
+
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar />
     </div>
   );
 };
+
 export default CartPage;
