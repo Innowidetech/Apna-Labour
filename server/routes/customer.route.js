@@ -9,7 +9,7 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
     createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount,
     getUserBookings, getUserPayments, getUserReviews, getUserNotifications, getAllHelpCenters, getHelpCenterByHeading,
-    createRefundRequest, cancelBooking, getBookingDetails
+    createRefundRequest, cancelBooking, getBookingDetails, clearCart
 } = require('../controllers/customer.controller')
 
 const router = express.Router();
@@ -17,6 +17,7 @@ const router = express.Router();
 // router.post('/cart', protect, addToCart);
 // router.delete('/cart/remove/:id', protect, removeFromCart);
 // router.get('/cart', protect, getCart);
+router.post("/cart/clear", protect, clearCart);
 router.post("/cart/:unitId", optionalAuth, addToCart);
 router.delete("/cart/remove/:unitId", optionalAuth, removeFromCart);
 router.get("/cart", optionalAuth, getCart);
@@ -24,6 +25,8 @@ router.get("/cart", optionalAuth, getCart);
 // router.post('/book-service', protect, authorize('Customer'), bookService);
 // router.post('/book-labourer', protect, authorize('Customer'), bookLabourer);
 router.get('/search-services', protect, authorize('Customer'), searchServices);
+
+
 
 router.get("/categories", getCategories);
 router.get("/categories/subcategories/:id", getSubCategoriesByCategory);
