@@ -235,12 +235,12 @@ exports.getCart = async (req, res) => {
         const userId = req.user ? req.user.userId : null;
         let guestId = req.headers["x-guest-id"]; // 👈 from frontend header
 
-
-        // Merge guest cart into user cart if logged in
+        // 🔁 Merge guest cart into user cart if logged in
         if (userId && guestId) {
             const guestCart = await Cart.findOne({ guestId });
             if (guestCart) {
                 let userCart = await Cart.findOne({ user: userId });
+
                 if (!userCart) {
                     guestCart.user = userId;
                     guestCart.guestId = undefined;
@@ -249,7 +249,7 @@ exports.getCart = async (req, res) => {
                 } else {
                     for (const item of guestCart.items) {
                         const index = userCart.items.findIndex(
-                            i => i.unit.toString() === item.unit.toString()
+                            (i) => i.unit.toString() === item.unit.toString()
                         );
                         if (index > -1) {
                             userCart.items[index].quantity += item.quantity;
@@ -264,24 +264,28 @@ exports.getCart = async (req, res) => {
             }
         }
 
+        // 🛒 Find user/guest cart
         const query = userId ? { user: userId } : { guestId };
-
         const cart = await Cart.findOne(query).populate("items.unit", "title image");
 
-
+        // 🧾 If cart empty
         if (!cart || cart.items.length === 0) {
             return res.status(200).json({
                 message: "Cart is empty",
                 items: [],
-                totalPrice: 0,
+                subtotal: 0,
+                tax: 0,
+                totalAmount: 0,
             });
         }
 
-        let totalPrice = 0;
-        const items = cart.items.map(item => {
-            const unitDoc = item.unit && item.unit.title ? item.unit : null; // populated unit OR null
-            const price = item.price || 0; // always trust stored price
-            totalPrice += price * item.quantity;
+        // 💰 Calculate subtotal, tax, and total
+        let subtotal = 0;
+        const items = cart.items.map((item) => {
+            const unitDoc = item.unit && item.unit.title ? item.unit : null;
+            const price = item.price || 0;
+            const total = price * item.quantity;
+            subtotal += total;
 
             return {
                 unit: unitDoc
@@ -289,16 +293,26 @@ exports.getCart = async (req, res) => {
                     : { id: item.unit, title: "Unknown / Deleted Item" },
                 quantity: item.quantity,
                 price,
-                total: price * item.quantity
+                total,
             };
         });
 
+        const taxRate = 0.12; // 12% GST
+        const tax = +(subtotal * taxRate).toFixed(2);
+        const tip = cart.tip || 0; // ✅ include tip
+        const totalAmount = +(subtotal + tax + tip).toFixed(2);
+
+        // ✅ Response
         return res.status(200).json({
             message: "Cart fetched successfully",
             items,
-            totalPrice,
+            subtotal: +subtotal.toFixed(2),
+            tax,
+            tip,
+            totalAmount,
         });
     } catch (err) {
+        console.error("Cart Fetch Error:", err);
         return res.status(500).json({
             message: "Internal server error",
             error: err.message,
@@ -306,6 +320,46 @@ exports.getCart = async (req, res) => {
     }
 };
 
+exports.clearCart = async (req, res) => {
+    try {
+        const userId = req.user ? req.user.userId : null;
+        const guestId = req.headers["x-guest-id"];
+
+        if (!userId && !guestId) {
+            return res.status(400).json({
+                success: false,
+                message: "User or Guest ID is required to clear cart",
+            });
+        }
+
+        const query = userId ? { user: userId } : { guestId };
+        const cart = await Cart.findOne(query); // ✅ no populate here
+
+        if (!cart) {
+            return res.status(404).json({
+                success: false,
+                message: "Cart not found",
+            });
+        }
+
+        // Clear only the items
+        cart.items = [];
+        await cart.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Cart cleared successfully",
+            cart,
+        });
+    } catch (error) {
+        console.error("Clear Cart Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: error.message,
+        });
+    }
+};
 
 exports.removeFromCart = async (req, res) => {
     try {
@@ -812,7 +866,7 @@ exports.deleteAccount = async (req, res) => {
             Dispute.deleteMany({ user: userId }),
         ]);
 
-        // 🗑️ Finally delete user
+        //  Finally delete user
         await User.findByIdAndDelete(userId);
 
         return res.status(200).json({
@@ -1165,68 +1219,63 @@ exports.saveSlot = async (req, res) => {
 exports.createBooking = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { tip = 0, paymentMethod } = req.body;
+        const { tip } = req.body; // ✅ tip passed from frontend
 
-        // ✅ Only COD allowed
-        if (paymentMethod !== "COD") {
-            return res.status(400).json({ message: "Only COD payment method is supported" });
-        }
-
-        // ✅ Find existing pending booking (with saved date/time)
-        const booking = await Booking.findOne({ user: userId, status: "Pending" });
-        if (!booking) {
-            return res.status(404).json({
-                message: "No pending booking found. Please select a booking date and time first.",
-            });
-        }
-
-        // ✅ Get customer's address
+        // ✅ Validate address
         const customer = await Customer.findOne({ userId });
         if (!customer || !customer.address || !customer.address.HNo) {
             return res.status(400).json({
-                message: "Please add your address before proceeding with booking",
+                success: false,
+                message: "Please add your address before proceeding with booking.",
             });
         }
 
-        // ✅ Get user's cart
+        // ✅ Fetch cart
         const cart = await Cart.findOne({ user: userId }).populate("items.unit");
         if (!cart || cart.items.length === 0) {
-            return res.status(400).json({ message: "Cart is empty" });
+            return res.status(400).json({ success: false, message: "Cart is empty." });
         }
+        cart.tip = tip;
+        await cart.save();
 
-        // ✅ Calculate prices
+        // ✅ Calculate subtotal, tax, total
         let subtotal = 0;
-        cart.items.forEach((item) => {
-            subtotal += item.price * item.quantity;
+        cart.items.forEach((item) => (subtotal += item.price * item.quantity));
+        const taxRate = 0.12; // 10% GST
+        const tax = +(subtotal * taxRate).toFixed(2);
+        const totalAmount = +(subtotal + tax + tip).toFixed(2);
+
+        // ✅ Create booking with default paymentMethod as Razorpay
+        const booking = new Booking({
+            user: userId,
+            items: cart.items,
+            subtotal,
+            tax,
+            tip, // ✅ tip included here
+            totalAmount,
+            status: "Pending",
+            bookedAt: new Date(),
+            paymentMethod: "Razorpay", // ✅ default
         });
-
-        const tax = subtotal * 0.1; // 10% GST
-        const totalAmount = subtotal + tax + tip;
-
-        // ✅ Update existing booking
-        booking.items = cart.items;
-        booking.subtotal = subtotal;
-        booking.tax = tax;
-        booking.tip = tip;
-        booking.totalAmount = totalAmount;
-        booking.paymentMethod = "COD";
-        booking.status = "Confirmed";
 
         await booking.save();
 
-        // ✅ Clear cart after booking
-        cart.items = [];
-        await cart.save();
-
+        // ✅ Return booking info
         return res.status(200).json({
             success: true,
-            message: "Booking finalized successfully with COD",
-            booking,
+            message: "Booking created successfully.",
+            bookingId: booking._id,
+            subtotal,
+            tax,
+            tip,
+            totalAmount,
+            items: cart.items,
         });
     } catch (err) {
         console.error("Booking Error:", err);
         return res.status(500).json({
-            message: "Internal server error",
+            success: false,
+            message: "Internal server error.",
             error: err.message,
         });
     }
@@ -1667,15 +1716,16 @@ exports.createLabourBooking = async (req, res) => {
             purpose,
         } = req.body;
 
-        const UserId = req.user?.id;
+        const UserId = req.user?.userId;
 
         // 1️⃣ Check labourer exists
-        const labourer = await Labourer.findById(labourerId);
-        if (!labourer) {
-            return res.status(404).json({ success: false, message: "Labourer not found" });
-        }
+        const labourer = await Labourer.findById(labourerId)
+            .populate("userId", "name mobileNumber");
+
 
         // 2️⃣ Determine labour type
+        const leaderName = labourer.userId?.name || "Unknown";
+        const leaderPhone = labourer.userId?.mobileNumber || "Not Provided";
         const labourType = labourer.registrationType; // "Individual" or "Team"
 
         const bookingData = {
@@ -1685,6 +1735,8 @@ exports.createLabourBooking = async (req, res) => {
             startDate,
             endDate,
             status: "Pending",
+            leaderName,
+            leaderPhone,
         };
 
         // 3️⃣ Validate required fields
@@ -1706,6 +1758,8 @@ exports.createLabourBooking = async (req, res) => {
             bookingData.numberOfWorkers = numberOfWorkers;
             bookingData.workLocation = workLocation;
             bookingData.purpose = purpose;
+            bookingData.leaderName = leaderName;   // ✅ add this
+            bookingData.leaderPhone = leaderPhone;
         } else {
             return res.status(400).json({
                 success: false,
@@ -1713,49 +1767,58 @@ exports.createLabourBooking = async (req, res) => {
             });
         }
 
-        // 4️⃣ Calculate totalDays, dailyRate, serviceFees, tax, totalAmount
+        // 4️⃣ Calculate totalDays, dailyRate, bookingCharge, tax, totalAmount
         const start = new Date(startDate);
         const end = new Date(endDate);
         const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
         let dailyRate = 0;
-        let serviceFees = 0;
+        // Booking Charge
         let tax = 0;
         let totalAmount = 0;
+
 
         if (labourType === "Individual") {
             const ratePerDay = labourer.cost || 0;
             dailyRate = ratePerDay;
-            serviceFees = Math.round(ratePerDay * totalDays * 0.1); // 10% service fee
-            tax = Math.round((ratePerDay * totalDays + serviceFees) * 0.10); // 18% tax
-            totalAmount = ratePerDay * totalDays + serviceFees + tax;
+            tax = Math.round((ratePerDay) * 0.12); // 12% tax
+            totalAmount = ratePerDay + tax;
         } else if (labourType === "Team") {
             const ratePerLabour = labourer.cost || 0;
-            dailyRate = ratePerLabour * numberOfWorkers;
-            serviceFees = Math.round(dailyRate * totalDays * 0.1);
-            tax = Math.round((dailyRate * totalDays + serviceFees) * 0.10);
-            totalAmount = dailyRate * totalDays + serviceFees + tax;
+            dailyRate = ratePerLabour;
+            // constant
+            tax = Math.round((dailyRate) * 0.12); // 12% tax
+            totalAmount = dailyRate + tax;
         }
 
         // 5️⃣ Add cost details to bookingData
         bookingData.totalDays = totalDays;
         bookingData.dailyRate = dailyRate;
-        bookingData.serviceFees = serviceFees;
+        bookingData.serviceFees = dailyRate; // Booking Charge
         bookingData.tax = tax;
         bookingData.totalCost = totalAmount;
 
         // 6️⃣ Create booking
         const booking = await LabourBooking.create(bookingData);
 
+        const totalLabours = labourType === "Individual" ? 1 : (numberOfWorkers || 1);
+
         res.status(201).json({
             success: true,
-            booking,
+            booking: {
+                ...booking._doc,
+                ...(labourType === "Team" && {
+                    leaderName: bookingData.leaderName,
+                    leaderPhone: bookingData.leaderPhone,
+                }),
+            },
             costBreakdown: {
                 totalDays,
-                dailyRate,
-                serviceFees,
+                totalLabours,
+                bookingCharge: dailyRate,
                 tax,
                 totalAmount,
+
             },
         });
     } catch (error) {
@@ -1763,10 +1826,9 @@ exports.createLabourBooking = async (req, res) => {
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
-
 exports.getLabourBookings = async (req, res) => {
     try {
-        const userId = req.user?.id;
+        const userId = req.user?.userId;
 
         if (!userId) {
             return res.status(401).json({ success: false, message: "Unauthorized" });

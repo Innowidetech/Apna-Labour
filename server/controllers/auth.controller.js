@@ -10,6 +10,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const { sendEmail } = require('../utils/nodemailer');
 const otpTemplate = require('../utils/otpTemplate');
 const HelpCenter = require('../models/HelpCenter');
+const forgetEmail = require("../utils/forgetEmail");
 
 
 
@@ -238,4 +239,122 @@ exports.logout = async (req, res) => {
 //         return res.status(500).json({ message: "Internal server error", error: err.status })
 //     }
 // };
+
+
+exports.adminLogin = async function (req, res) {
+    try {
+        const { ID, password } = req.body;
+
+        if (!ID || !password) {
+            return res.status(400).json({ success: false, message: 'ID and password are required' });
+        }
+
+        // Find user with role 'Admin' and matching ID
+        const admin = await User.findOne({ ID, role: 'Admin' });
+        if (!admin) {
+            return res.status(401).json({ success: false, message: 'Invalid ID or password' });
+        }
+
+        // Compare password
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: 'Invalid ID or password' });
+        }
+
+        // Generate JWT
+        const token = jwt.sign(
+            { id: admin._id, role: admin.role },
+            process.env.JWT_SECRET || 'your_jwt_secret',
+            { expiresIn: '1d' }
+        );
+
+        res.json({
+            success: true,
+            token,
+            admin: {
+                id: admin._id,
+                ID: admin.ID,
+                name: admin.name,
+                role: admin.role
+            }
+        });
+
+    } catch (err) {
+        console.error('Admin login error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+exports.sendForgotPasswordOTP = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ success: false, message: "Email is required" });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ success: false, message: "No user found with this email" });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Save OTP with expiry (5 minutes)
+        user.otp = otp;
+        user.otpExpiry = Date.now() + 1 * 60 * 1000; // 1 minute
+        await user.save();
+
+        // Send email
+        await sendEmail(email, "Apna Labour Password Reset OTP", forgetEmail(otp));
+
+        return res.json({ success: true, message: "OTP sent successfully to your email" });
+    } catch (error) {
+        console.error("Error sending OTP:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+
+exports.resetPasswordWithOTP = async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ success: false, message: "All fields are required" });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        if (user.otp !== otp) {
+            return res.status(400).json({ success: false, message: "Invalid OTP" });
+        }
+
+        if (user.otpExpiry < Date.now()) {
+            return res.status(400).json({ success: false, message: "OTP has expired" });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+
+        // Clear OTP
+        user.otp = null;
+        user.otpExpiry = null;
+
+        await user.save();
+
+        res.json({ success: true, message: "Password reset successful" });
+    } catch (error) {
+        console.error("Error resetting password:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+
+
 

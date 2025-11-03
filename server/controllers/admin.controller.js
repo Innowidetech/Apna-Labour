@@ -8,6 +8,10 @@ const Notification = require('../models/Notification');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 const HelpCenter = require('../models/HelpCenter');
+const acceptApplicantTemplate = require('../utils/acceptApplicantTemplate');
+const Booking = require('../models/Booking');
+const Review = require('../models/Review');
+const Dispute = require('../models/Dispute');
 
 const {
     Category,
@@ -40,36 +44,80 @@ exports.getAllUsers = async (req, res) => {
 
 exports.approveLabourerRegistrationAndSendTrainingDetails = async (req, res) => {
     try {
-        const user = await User.findById(req.user?.id);
-        if (!user || user.role !== 'Admin') { return res.status(403).json({ message: "Access Denied, only admin have access" }) }
-
-        const { id } = req.params;
-        if (!id) { return res.status(400).json({ message: "Please provide labourer id" }) };
-
-        const labourer = await Labourer.findById(id).populate('userId');
-        if (!labourer) { return res.status(404).json({ message: "No labourer found with the id" }) }
-
-        const { startDate, endDate, timings, location } = req.body;
-        if (!startDate || !endDate || !timings || !location) {
-            return res.status(400).json({ message: "Provide the training details to approve labourer registartion" })
+        // Only Admin can approve
+        const adminUser = await User.findById(req.user?.id);
+        if (!adminUser || adminUser.role !== 'Admin') {
+            return res.status(403).json({ message: "Access Denied, only admin can approve" });
         }
 
-        if (!/.+,\s*[^,]+,\s*[^-]+-\s*\d{6}$/.test(location)) {
+        // Check labourer ID
+        const { id } = req.params;
+        if (!id) {
+            return res.status(400).json({ message: "Please provide labourer ID" });
+        }
+
+        // Fetch labourer and associated user details
+        const labourer = await Labourer.findById(id).populate('userId');
+        if (!labourer) {
+            return res.status(404).json({ message: "No labourer found with the given ID" });
+        }
+
+        // Extract and validate training details
+        const { startDate, endDate, timings, location } = req.body;
+        if (!startDate || !endDate || !timings || !location) {
             return res.status(400).json({
-                message: 'Invalid location format. It should end with "City, State - Pincode (6 digits only)" using commas and a hyphen.'
+                message: "Provide all training details to approve labourer registration",
             });
         }
 
-        labourer.userId.isActive = 'true'
+        // Validate location format (City, State - Pincode)
+        if (!/.+,\s*[^,]+,\s*[^-]+-\s*\d{6}$/.test(location)) {
+            return res.status(400).json({
+                message:
+                    'Invalid location format. Use: "City, State - Pincode (6 digits only)"',
+            });
+        }
+
+        // Activate user
+        labourer.userId.isActive = true;
         await labourer.userId.save();
 
-        const trainingDetails = new TrainingDetails({ labourerId: labourer._id, startDate, endDate, timings, location })
-        await trainingDetails.save()
+        // Save training details
+        const trainingDetails = new TrainingDetails({
+            labourerId: labourer._id,
+            startDate,
+            endDate,
+            timings,
+            location,
+        });
+        await trainingDetails.save();
 
-        res.status(201).json({ message: `Labourer - ${labourer.userId.name} approved successfully and training details sent` })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.status })
+        // Prepare email content
+        const emailHTML = acceptApplicantTemplate(labourer.userId.name, {
+            startDate,
+            endDate,
+            timings,
+            location,
+        });
+
+        // Send email
+        await sendEmail(
+            labourer.userId.email,
+            "🎉 Congratulations! Your Apna Labour Application is Approved",
+            emailHTML
+        );
+
+        // Response
+        return res.status(201).json({
+            message: `Labourer "${labourer.userId.name}" approved successfully and training details emailed.`,
+        });
+
+    } catch (err) {
+        console.error("❌ Error approving labourer:", err);
+        return res.status(500).json({
+            message: "Internal server error",
+            error: err.message,
+        });
     }
 };
 
@@ -485,7 +533,7 @@ exports.deleteUnit = async (req, res) => {
         // 2️ (Optional) Delete image from Cloudinary if applicable
         //  Only do this if you stored public_id or have a deleteMedia util
         // Example:
-         await deleteMedia(existingUnit.image);
+        await deleteMedia(existingUnit.image);
 
         await Unit.findByIdAndDelete(unitId);
 
@@ -680,6 +728,48 @@ exports.createNotificationForAll = async (req, res) => {
     }
 };
 
+exports.createNotificationForUser = async (req, res) => {
+    try {
+        const { userId, title, message } = req.body;
+
+
+        if (!userId || !title || !message) {
+            return res.status(400).json({ message: "userId, title & message are required" });
+        }
+
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+
+        if (!req.user || !req.user.userId) {
+            return res.status(401).json({ message: "Unauthorized: admin not found in request" });
+        }
+
+        const notification = await Notification.create({
+            user: userId,
+            title,
+            message,
+            createdBy: req.user.userId //  use userId instead of id
+        });
+
+
+        res.status(201).json({
+            message: "Notification sent successfully",
+            notification
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: "Internal server error",
+            error: err.message
+        });
+    }
+};
+
+
+
 exports.getContacts = async (req, res) => {
     try {
         const contacts = await Contact.find().sort({ createdAt: -1 });
@@ -760,7 +850,7 @@ exports.createHelpCenter = async (req, res) => {
         const helpCenter = await HelpCenter.create({
             heading,
             accordions,
-            createdBy: req.user?._id || null
+            createdBy: req.user?.userId || null
         });
 
         res.status(201).json({
@@ -772,9 +862,467 @@ exports.createHelpCenter = async (req, res) => {
     }
 };
 
+exports.getAdminProfile = async (req, res) => {
+    try {
+        const adminId = req.user?.userId; // from auth middleware
+        if (!adminId) {
+            return res.status(401).json({ success: false, message: "Unauthorized" });
+        }
+
+        const admin = await User.findById(adminId).select('name role picture');
+        if (!admin) {
+            return res.status(404).json({ success: false, message: "Admin not found" });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                name: admin.name,
+                role: admin.role,
+                picture: admin.picture,
+            },
+        });
+    } catch (error) {
+        console.error("Get Admin Profile Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+exports.getAdminDashboard = async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide a date in YYYY-MM-DD format",
+            });
+        }
+
+        // Parse date range for bookings
+        const start = new Date(`${date}T00:00:00.000Z`);
+        const end = new Date(`${date}T23:59:59.999Z`);
 
 
+        // 📅 Bookings made on that date
+        const bookings = await Booking.find({
+            bookingDate: { $gte: start, $lte: end },
+        });
+
+        const totalBookings = bookings.length;
+        const totalMoney = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+        const totalCompletedJobs = bookings.filter(b => b.status === "Completed").length;
+
+        // 🔹 Booking trend (per service)
+        const serviceCounts = {};
+        bookings.forEach(b => {
+            b.items?.forEach(item => {
+                const service = item?.serviceName || "Unknown Service";
+                serviceCounts[service] = (serviceCounts[service] || 0) + 1;
+            });
+        });
+
+        const totalProfessionalLabours = await Labourer.countDocuments({
+            registrationType: "Professional",
+            status: "Accepted",
+            isAvailable: true,
+            trainingStatus: "Completed",
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                summary: {
+                    totalBookings,
+                    totalMoney,
+                    totalProfessionalLabours, // <- independent of date
+                    totalCompletedJobs,
+                },
+            },
+        });
+    } catch (error) {
+        console.error("Dashboard Error:", error);
+        res.status(500).json({ success: false, message: "Server error", error });
+    }
+};
+exports.getBookingsByDate = async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) return res.status(400).json({ success: false, message: "Date is required" });
+
+        // Start & end of the day
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Fetch bookings
+        const bookings = await Booking.find({
+            bookingDate: { $gte: startOfDay, $lte: endOfDay },
+        })
+            .populate("user", "name")                 // Customer name
+            .populate("items.unit", "title")          // Fetch service title from Unit
+            .lean();
+
+        const formatted = bookings.map((b) => {
+            const customerName = b.user?.name || "Unknown";
+
+            // Extract all service titles in this booking
+            const services = b.items?.map(item => item.unit?.title || "Service").join(", ") || "Service";
+
+            // Labourer info
+            const labourer = b.labourerName || (b.status === "Pending" ? "Not assigned" : "—");
+
+            // Payment info
+            const paymentStatus =
+                b.paymentMethod === "Razorpay"
+                    ? `₹${b.totalAmount} - Paid`
+                    : b.paymentMethod === "COD"
+                        ? "COD"
+                        : "Unpaid";
+
+            return {
+                _id: b._id,
+                bookingId: b.bookingId,
+                customer: customerName,
+                service: services,      // Correct service titles
+                time: new Date(b.bookingDate).toLocaleString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                }),
+                labour: labourer,
+                status: b.status,
+                payment: paymentStatus,
+            };
+        });
+
+        res.status(200).json({ success: true, data: formatted });
+    } catch (error) {
+        console.error("Get bookings by date error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+exports.getCustomerDetailsByBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        // 1️⃣ Find the booking
+        const booking = await Booking.findById(bookingId).lean();
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
+        const userId = booking.user;
+
+        // 2️⃣ Fetch User & Customer profile
+        const user = await User.findById(userId).select("-password").lean();
+        const profile = await Customer.findOne({ userId }).lean();
+
+        // 3️⃣ Fetch all bookings and populate unit titles
+        const allBookings = await Booking.find({ user: userId })
+            .populate({
+                path: 'items.unit',
+                select: 'title', // fetch only the title field
+                model: 'Unit'
+            })
+            .lean();
+
+        // 4️⃣ Summary
+        const totalBookings = allBookings.length;
+        const totalAmountSpent = allBookings.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
+        const reviews = await Review.find({ userId }).lean();
+        const averageRating =
+            reviews.length > 0
+                ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
+                : "0.0";
+        const disputesCount = await Dispute.countDocuments({ user: userId });
+        const availabilityStatus = user.isActive ? "Active" : "Inactive";
+
+        // 5️⃣ Booking history with proper unit names
+        const bookingHistory = allBookings.map(b => ({
+            _id: b._id,
+            bookingId: b.bookingId,
+            items: b.items.map(item => ({
+                unit: item.unit ? item.unit.title : "Deleted Service",
+                quantity: item.quantity,
+                price: item.price
+            })),
+            totalAmount: b.totalAmount,
+            bookingDate: b.bookingDate,
+            status: b.status,
+            payment: b.paymentMethod === "Razorpay" ? `₹${b.totalAmount}` : b.paymentMethod
+        }));
+
+        res.status(200).json({
+            success: true,
+            customerDetails: {
+                user,
+                profile,
+                summary: {
+                    totalBookings,
+                    totalAmountSpent,
+                    averageRating,
+                    numberOfDisputes: disputesCount,
+                    availabilityStatus
+                }
+            },
+            bookingHistory
+        });
+
+    } catch (error) {
+        console.error("Get customer details error:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
 
 
+exports.getTop4DemandingServicesByMonth = async (req, res) => {
+    try {
+        const data = await Booking.aggregate([
+            { $unwind: "$items" },
 
+            // 1️⃣ Join Units
+            {
+                $lookup: {
+                    from: "units",
+                    localField: "items.unit",
+                    foreignField: "_id",
+                    as: "unitInfo",
+                },
+            },
+            { $unwind: "$unitInfo" },
 
+            // 2️⃣ Join Specific Service
+            {
+                $lookup: {
+                    from: "specificservices",
+                    localField: "unitInfo.specificService",
+                    foreignField: "_id",
+                    as: "specificServiceInfo",
+                },
+            },
+            { $unwind: "$specificServiceInfo" },
+
+            // 3️⃣ Join Service Type
+            {
+                $lookup: {
+                    from: "servicetypes",
+                    localField: "specificServiceInfo.serviceType",
+                    foreignField: "_id",
+                    as: "serviceTypeInfo",
+                },
+            },
+            { $unwind: "$serviceTypeInfo" },
+
+            // 4️⃣ Join Appliance
+            {
+                $lookup: {
+                    from: "appliancestypes",
+                    localField: "serviceTypeInfo.appliances",
+                    foreignField: "_id",
+                    as: "applianceInfo",
+                },
+            },
+            { $unwind: "$applianceInfo" },
+
+            // 5️⃣ Join SubCategory
+            {
+                $lookup: {
+                    from: "subcategories",
+                    localField: "applianceInfo.subCategory",
+                    foreignField: "_id",
+                    as: "subCategoryInfo",
+                },
+            },
+            { $unwind: "$subCategoryInfo" },
+
+            // 6️⃣ Join Category
+            {
+                $lookup: {
+                    from: "categories",
+                    localField: "subCategoryInfo.category",
+                    foreignField: "_id",
+                    as: "categoryInfo",
+                },
+            },
+            { $unwind: "$categoryInfo" },
+
+            // 7️⃣ Extract month
+            {
+                $addFields: {
+                    month: { $month: "$createdAt" },
+                },
+            },
+
+            // 8️⃣ Group by category + month
+            {
+                $group: {
+                    _id: {
+                        category: "$categoryInfo.title",
+                        month: "$month",
+                    },
+                    totalBookings: { $sum: 1 },
+                },
+            },
+
+            // 9️⃣ Calculate total per category (for ranking)
+            {
+                $group: {
+                    _id: "$_id.category",
+                    months: {
+                        $push: {
+                            month: "$_id.month",
+                            totalBookings: "$totalBookings",
+                        },
+                    },
+                    totalOverall: { $sum: "$totalBookings" },
+                },
+            },
+
+            // 🔟 Sort by total bookings and limit to top 4
+            { $sort: { totalOverall: -1 } },
+            { $limit: 4 },
+        ]);
+
+        // 🔹 Convert month numbers → names
+        const monthNames = [
+            "",
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ];
+
+        const formatted = {};
+
+        data.forEach((cat) => {
+            const category = cat._id;
+            formatted[category] = {};
+            cat.months.forEach((m) => {
+                const monthName = monthNames[m.month];
+                formatted[category][monthName] = m.totalBookings;
+            });
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Top 4 most demanding services by month",
+            data: formatted,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching analytics data",
+            error: error.message,
+        });
+    }
+};
+
+exports.getFilteredCustomers = async (req, res) => {
+    try {
+        const { city, status } = req.query;
+
+        // 🔹 Base match for role and status
+        const matchStage = { role: "Customer" };
+
+        if (status) {
+            if (status === "Active") matchStage.isActive = true;
+            else if (status === "Inactive") matchStage.isActive = false;
+            else if (status === "Deleted") matchStage.isDeleted = true; // optional soft delete
+        }
+
+        const customers = await User.aggregate([
+            // 1️⃣ Match Customers
+            { $match: matchStage },
+
+            // 2️⃣ Join with Customer collection to get address, gender, etc.
+            {
+                $lookup: {
+                    from: "customers",
+                    localField: "_id",
+                    foreignField: "userId",
+                    as: "customerInfo",
+                },
+            },
+            { $unwind: { path: "$customerInfo", preserveNullAndEmptyArrays: true } },
+
+            // 3️⃣ Join with bookings
+            {
+                $lookup: {
+                    from: "bookings",
+                    localField: "_id",
+                    foreignField: "user",
+                    as: "bookings",
+                },
+            },
+
+            // 4️⃣ Add derived fields
+            {
+                $addFields: {
+                    totalBookings: { $size: "$bookings" },
+                    city: "$customerInfo.address.townCity",
+                    status: {
+                        $cond: [{ $eq: ["$isActive", true] }, "Active", "Inactive"],
+                    },
+                },
+            },
+
+            // 5️⃣ Apply city filter (filter inside joined customerInfo)
+            ...(city
+                ? [
+                    {
+                        $match: {
+                            "customerInfo.address.townCity": {
+                                $regex: new RegExp(city, "i"), // case-insensitive
+                            },
+                        },
+                    },
+                ]
+                : []),
+
+            // 6️⃣ Project final fields
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    email: 1,
+                    mobileNumber: 1,
+                    city: 1,
+                    totalBookings: 1,
+                    status: 1,
+                    createdAt: 1,
+                },
+            },
+
+            // 7️⃣ Sort by total bookings
+            { $sort: { totalBookings: -1 } },
+        ]);
+
+        res.status(200).json({
+            success: true,
+            message: "Customers fetched successfully",
+            total: customers.length,
+            data: customers,
+        });
+    } catch (error) {
+        console.error("Error in getFilteredCustomers:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching customers",
+            error: error.message,
+        });
+    }
+};

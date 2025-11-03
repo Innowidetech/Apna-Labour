@@ -44,7 +44,7 @@ exports.sendEmail = async (to, subject, htmlContent) => {
         console.log("✅ Email sent:", res.data.id);
         return res.data;
     } catch (error) {
-        console.error("❌ Email sending failed:", error.response?.data || error.message);
+        console.error(" Email sending failed:", error.response?.data || error.message);
         throw error;
     }
 };
