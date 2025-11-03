@@ -231,62 +231,173 @@ const ServiceDetails = () => {
     }
   };
 
-  // Booking handlers
-  const handleBooking = () => {
-    if (!selectedLabour || !startDate || !endDate) {
-      alert("Please fill all fields before booking.");
-      return;
+  // ✅ Handle Individual (Casual Labour) Booking
+const handleBooking = async () => {
+  if (!selectedLabour || !startDate || !endDate) {
+    alert("Please fill all fields before booking.");
+    return;
+  }
+
+  const token = localStorage.getItem("token");
+  const userId = localStorage.getItem("userId"); // get from localStorage
+
+  if (!token) {
+    alert("No token found. Please log in again.");
+    return;
+  }
+
+  if (!userId) {
+    alert("No user ID found. Please log in again.");
+    return;
+  }
+
+  const bookingData = {
+    labourer: selectedLabour._id,
+    startDate,
+    endDate,
+    UserId: userId, // ✅ must match backend model
+  };
+
+  console.log("📦 Sending Individual booking data:", bookingData);
+
+  try {
+    const res = await fetch(
+      "https://apnalabour.onrender.com/api/customer/labour-booking",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(bookingData),
+      }
+    );
+
+    const data = await res.json();
+    console.log("✅ Individual Booking API Response:", data);
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Booking failed");
     }
-    const newItem = {
+
+    alert("✅ Casual Labour Booking successful!");
+
+  // ✅ Save booking info to localStorage for payment page
+localStorage.setItem(
+  "labourCart",
+  JSON.stringify([
+    {
+      bookingId: data.booking._id,
       labourer: selectedLabour,
       startDate,
       endDate,
       duration,
-      location: "",
-    };
-    localStorage.setItem("labourCart", JSON.stringify([newItem]));
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-    setIsBookingModalOpen(false);
-    setStartDate("");
-    setEndDate("");
-    setDuration(0);
+      costBreakdown: data.costBreakdown, // 🔥 include this line
+    },
+  ])
+);
+
+
+    console.log("🛒 Saved to labourCart:", {
+      bookingId: data.booking?._id,
+      labourer: selectedLabour,
+      startDate,
+      endDate,
+      duration,
+    });
+
     navigate("/labour-cart");
+  } catch (err) {
+    console.error("❌ Booking failed:", err);
+    alert(`Booking failed: ${err.message}`);
+  }
+};
+
+// ✅ Handle Team Booking
+const handleTeamBooking = async () => {
+  if (
+    !selectedTeam ||
+    !teamStartDate ||
+    !teamEndDate ||
+    !teamNumberOfWorkers ||
+    !teamWorkLocation ||
+    !teamPurpose
+  ) {
+    alert("Please fill all fields before booking the team.");
+    return;
+  }
+
+  const token = localStorage.getItem("token");
+  const userId = localStorage.getItem("userId");
+
+  if (!token) {
+    alert("No token found. Please log in again.");
+    return;
+  }
+
+  if (!userId) {
+    alert("No user ID found. Please log in again.");
+    return;
+  }
+
+  const bookingData = {
+    labourer: selectedTeam._id,
+    startDate: teamStartDate,
+    endDate: teamEndDate,
+    UserId: userId, // ✅ Capital U here too
+    numberOfWorkers: teamNumberOfWorkers,
+    workLocation: teamWorkLocation,
+    purpose: teamPurpose,
   };
 
-  const handleTeamBooking = () => {
-    if (
-      !selectedTeam ||
-      !teamStartDate ||
-      !teamEndDate ||
-      !teamNumberOfWorkers ||
-      !teamWorkLocation ||
-      !teamPurpose
-    ) {
-      alert("Please fill all fields before booking team.");
-      return;
-    }
-    const newTeamItem = {
-      labourer: selectedTeam,
-      startDate: teamStartDate,
-      endDate: teamEndDate,
-      numberOfWorkers: teamNumberOfWorkers,
+  console.log("📦 Sending Team booking data:", bookingData);
+
+  try {
+    const res = await fetch(
+      "https://apnalabour.onrender.com/api/customer/labour-booking",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(bookingData),
+      }
+    );
+
+    const data = await res.json();
+    console.log("✅ Team Booking API Response:", data);
+
+    if (!res.ok || !data.success) throw new Error(data.message || "Booking failed");
+
+    alert("✅ Team Booking successful!");
+  localStorage.setItem(
+  "labourCart",
+  JSON.stringify([
+    {
+      bookingId: data.booking._id,
+      labourType: "Team", // ✅ lets LabourCart know it’s a team
+      leaderName: selectedTeam?.teamLeaderName || selectedTeam?.name || "N/A",
+      leaderPhone: selectedTeam?.mobileNumber || selectedTeam?.phone || "N/A",
       workLocation: teamWorkLocation,
       purpose: teamPurpose,
-      duration: teamDuration,
-    };
-    localStorage.setItem("teamLabourCart", JSON.stringify([newTeamItem]));
-    setShowTeamToast(true);
-    setTimeout(() => setShowTeamToast(false), 3000);
-    setIsTeamBookingModalOpen(false);
-    setTeamStartDate("");
-    setTeamEndDate("");
-    setTeamDuration(0);
-    setTeamNumberOfWorkers("");
-    setTeamWorkLocation("");
-    setTeamPurpose("");
-    navigate("/team-labour-cart");
-  };
+      numberOfWorkers: teamNumberOfWorkers,
+      startDate: teamStartDate,
+      endDate: teamEndDate,
+      costBreakdown: data.costBreakdown,
+      team: selectedTeam, // keep reference too
+    },
+  ])
+);
+
+
+
+    navigate("/labour-cart");
+  } catch (err) {
+    console.error("❌ Team Booking failed:", err);
+    alert(`Team Booking failed: ${err.message}`);
+  }
+};
 
   // Duration calculators
   useEffect(() => {
@@ -418,7 +529,7 @@ const ServiceDetails = () => {
                     <h3 className="text-lg font-semibold text-center">{labour.name}</h3>
                     <p className="text-sm text-gray-600 text-center">{labour.skill || "Lifting, Packing"}</p>
                     <p className="text-sm text-gray-500 text-center mb-2">{labour.experience || "5+ years exp"}</p>
-                    <p className="text-center text-lg font-bold mb-2">₹{labour.cost || 150}/day</p>
+                    <p className="text-center text-lg font-bold mb-2">₹{labour.cost || 150}</p>
                     <p className="text-green-600 text-sm text-center mb-4">● {labour.isAvailable ? "Available Today" : "Not Available"}</p>
 
                     <div className="flex flex-col items-center gap-2">
