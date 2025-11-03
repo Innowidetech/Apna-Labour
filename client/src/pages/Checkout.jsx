@@ -14,7 +14,7 @@ const Checkout = () => {
   const [error, setError] = useState(null);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editSection, setEditSection] = useState(""); // "user", "address", "booking"
+  const [editSection, setEditSection] = useState("");
   const [editData, setEditData] = useState({});
 
   const [profile, setProfile] = useState(profileData);
@@ -94,6 +94,98 @@ const Checkout = () => {
       setEditModalOpen(false);
     } catch (err) {
       toast.error(err.message || "Failed to update profile.");
+    }
+  };
+
+  // Dynamically load Razorpay script
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (document.getElementById("razorpay-script")) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.id = "razorpay-script";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Razorpay Payment Integration
+  const handlePayment = async () => {
+    const res = await loadRazorpayScript();
+    if (!res) {
+      toast.error("Failed to load Razorpay. Check your connection.");
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("Please login to proceed with payment.");
+        return;
+      }
+
+      // 1️⃣ Create Razorpay order
+      const orderRes = await fetch("https://apnalabour.onrender.com/api/payment/order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ bookingId: booking._id }),
+      });
+
+      const orderData = await orderRes.json();
+      if (!orderRes.ok) throw new Error(orderData.message || "Failed to create order.");
+
+      const { id: orderId, amount, currency } = orderData;
+
+      // 2️⃣ Open Razorpay Checkout
+      const options = {
+        key: "rzp_test_yourkeyhere", // replace with your Razorpay key
+        amount: amount,
+        currency: currency,
+        name: "Apna Labour",
+        description: "Service Payment",
+        order_id: orderId,
+        handler: async function (response) {
+          // 3️⃣ Verify payment
+          try {
+            const verifyRes = await fetch("https://apnalabour.onrender.com/api/payment/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                orderId: response.razorpay_order_id,
+                paymentId: response.razorpay_payment_id,
+                signature: response.razorpay_signature,
+              }),
+            });
+
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(verifyData.message || "Payment verification failed");
+
+            toast.success("Payment successful!");
+          } catch (verifyErr) {
+            toast.error(verifyErr.message || "Payment verification failed.");
+          }
+        },
+        prefill: {
+          name: user.name,
+          email: user.email || "",
+          contact: user.mobileNumber,
+        },
+        theme: {
+          color: "#003049",
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      toast.error(err.message || "Payment failed. Try again.");
     }
   };
 
@@ -195,9 +287,9 @@ const Checkout = () => {
 
             <button
               className="mt-4 bg-[#003049] text-white py-2 rounded-md font-medium hover:bg-[#002b4c]"
-              onClick={() => alert("Proceeding to payment...")}
+              onClick={handlePayment}
             >
-              Proceed to Checkout
+              PayNow
             </button>
           </div>
         )}
