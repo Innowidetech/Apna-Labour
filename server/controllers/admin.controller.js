@@ -15,6 +15,11 @@ const Dispute = require('../models/Dispute');
 const AcceptedService = require('../models/AcceptedService');
 const AcceptedSkill = require('../models/AcceptedSkill');
 const suspensionMail = require('../utils/suspensionMail');
+const { sendEmail } = require('../utils/nodemailer');
+const trainingCompletionMail = require('../utils/trainingCompletionMail');
+const serviceRejectionMail = require('../utils/serviceRejectionMail');
+const trainingRejectionMail = require('../utils/trainingRejectionMail');
+const mongoose = require('mongoose');
 
 const {
     Category,
@@ -44,126 +49,177 @@ exports.getAllUsers = async (req, res) => {
     }
 };
 
-
-exports.approveLabourerRegistrationAndSendTrainingDetails = async (req, res) => {
+exports.approveLabourerTraining = async (req, res) => {
     try {
-        // Only Admin can approve
-        const adminUser = await User.findById(req.user?.id);
+        const adminUser = await User.findById(req.user?.userId); // <--- fixed
         if (!adminUser || adminUser.role !== 'Admin') {
-            return res.status(403).json({ message: "Access Denied, only admin can approve" });
+            return res.status(403).json({ message: "Access denied, only admin can approve training" });
         }
 
-        // Check labourer ID
         const { id } = req.params;
-        if (!id) {
-            return res.status(400).json({ message: "Please provide labourer ID" });
+        const { location, startDate, endDate, timing } = req.body;
+        const imgFile = req.files?.image?.[0];
+
+        if (!id || !location || !startDate || !endDate || !timing || !imgFile) {
+            return res.status(400).json({
+                message: "All fields (location, startDate, endDate, timing, image) are required",
+            });
         }
 
-        // Fetch labourer and associated user details
         const labourer = await Labourer.findById(id).populate('userId');
-        if (!labourer) {
-            return res.status(404).json({ message: "No labourer found with the given ID" });
-        }
+        if (!labourer) return res.status(404).json({ message: "No labourer found with the given ID" });
 
-        // Extract and validate training details
-        const { startDate, endDate, timings, location } = req.body;
-        if (!startDate || !endDate || !timings || !location) {
-            return res.status(400).json({
-                message: "Provide all training details to approve labourer registration",
-            });
-        }
+        const uploadImage = await uploadMedia(imgFile);
+        if (!uploadImage || !uploadImage[0]) return res.status(500).json({ message: "Image upload failed" });
 
-        // Validate location format (City, State - Pincode)
-        if (!/.+,\s*[^,]+,\s*[^-]+-\s*\d{6}$/.test(location)) {
-            return res.status(400).json({
-                message:
-                    'Invalid location format. Use: "City, State - Pincode (6 digits only)"',
-            });
-        }
-
-        // Activate user
-        labourer.userId.isActive = true;
-        await labourer.userId.save();
-
-        // Save training details
         const trainingDetails = new TrainingDetails({
             labourerId: labourer._id,
+            location,
             startDate,
             endDate,
-            timings,
-            location,
+            timings: timing,
+            image: uploadImage[0],
         });
         await trainingDetails.save();
 
-        // Prepare email content
-        const emailHTML = acceptedTrainingMail(labourer.userId.name, {
-            startDate,
-            endDate,
-            timings,
-            location,
-        });
+        labourer.status = 'Accepted';
+        labourer.trainingStatus = 'On Going';
+        labourer.userId.isActive = true;
+        await labourer.userId.save();
+        await labourer.save();
 
-        // Send email
+        const emailHTML = acceptedTrainingMail(
+            labourer.userId.name,
+            location,
+            new Date(startDate).toLocaleDateString(),
+            new Date(endDate).toLocaleDateString(),
+            timing,
+            uploadImage[0]
+        );
+
         await sendEmail(
             labourer.userId.email,
-            "🎉 Congratulations! Your Apna Labour Application is Approved",
+            "🎉 Apna Labour Training Details Assigned",
             emailHTML
         );
 
-        // Response
         return res.status(201).json({
-            message: `Labourer "${labourer.userId.name}" approved successfully and training details emailed.`,
+            success: true,
+            message: `Training details sent to ${labourer.userId.email}`,
+            trainingDetails,
+        });
+    } catch (err) {
+        console.error("❌ Error approving and sending training details:", err);
+        return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+    }
+};
+exports.completeTraining = async (req, res) => {
+    try {
+        // ✅ Only admin can update training completion
+        const adminUser = await User.findById(req.user.userId);
+        if (!adminUser || adminUser.role !== 'Admin') {
+            return res.status(403).json({ message: "Access Denied, only admin can complete training" });
+        }
+
+        const { id } = req.params; // training details id
+        const { score } = req.body; // training score sent in request body
+
+        if (!score && score !== 0) {
+            return res.status(400).json({ message: "Please provide a training score" });
+        }
+
+        // Find training details
+        const training = await TrainingDetails.findById(id).populate('labourerId');
+        if (!training) {
+            return res.status(404).json({ message: "Training not found" });
+        }
+
+        // Update training status and score
+        training.trainingStatus = 'Completed';
+        await training.save();
+
+        // Update labourer record
+        const labourer = training.labourerId;
+        labourer.trainingStatus = 'Completed';
+        labourer.traingScore = score;
+        labourer.isAvailable = true; // available for work
+        await labourer.save();
+
+        // Send email to labourer
+        const emailHTML = trainingCompletionMail(score);
+        await sendEmail(
+            labourer.userId.email,
+            "🎉 Training Completed Successfully!",
+            emailHTML
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: `Training marked as completed and score sent to ${labourer.userId.email}`,
+            training,
         });
 
     } catch (err) {
-        console.error("❌ Error approving labourer:", err);
+        console.error("Error completing training:", err);
+        return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+    }
+};
+
+exports.rejectTraining = async (req, res) => {
+    try {
+        // Check admin permission
+        const adminUser = await User.findById(req.user.userId);
+        if (!adminUser || adminUser.role !== 'Admin') {
+            return res.status(403).json({ message: "Access denied, only admin can reject training" });
+        }
+
+        //  Extract data
+        const { id } = req.params; // labourer id
+        const { reason } = req.body; // reason for rejection
+
+        if (!reason) {
+            return res.status(400).json({ message: "Rejection reason is required" });
+        }
+
+        //  Find labourer
+        const labourer = await Labourer.findById(id).populate('userId');
+        if (!labourer) {
+            return res.status(404).json({ message: "No labourer found with this ID" });
+        }
+
+        //  Update labourer training status
+        labourer.trainingStatus = 'Rejected';
+        await labourer.save();
+
+        //  Optionally mark related training details as rejected
+        await TrainingDetails.updateMany(
+            { labourerId: id },
+            { $set: { trainingStatus: 'Rejected' } }
+        );
+
+        //  Send rejection email
+        const emailHTML = trainingRejectionMail(reason);
+        await sendEmail(
+            labourer.userId.email,
+            " Training Rejected - Apna Labour",
+            emailHTML
+        );
+
+        //  Response
+        return res.status(200).json({
+            success: true,
+            message: `Training rejected and email sent to ${labourer.userId.email}`,
+            data: { labourerId: id, reason }
+        });
+    } catch (err) {
+        console.error(" Error rejecting training:", err);
         return res.status(500).json({
+            success: false,
             message: "Internal server error",
             error: err.message,
         });
     }
 };
-
-
-exports.getTrainingDetailsAndLabourers = async (req, res) => {
-    try {
-        const user = await User.findById(req.user?.id);
-        if (!user || user.role !== 'Admin') { return res.status(403).json({ message: "Access Denied, only admin have access" }) }
-
-        const trainingDetails = await TrainingDetails.find().populate({ path: 'labourerId', populate: { path: 'userId', select: ('name email mobileNumber isActive') } });
-        if (!trainingDetails.length) { return res.status(404).json({ message: "No training details found" }) }
-
-        res.status(200).json(trainingDetails)
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.status })
-    }
-};
-
-
-exports.setTrainingCompleted = async (req, res) => {
-    try {
-        const user = await User.findById(req.user?.id);
-        if (!user || user.role !== 'Admin') { return res.status(403).json({ message: "Access Denied, only admin have access" }) }
-
-        const { id } = req.params;
-        if (!id) { return res.status(400).json({ message: "Please provide training details id" }) };
-
-        const training = await TrainingDetails.findById(id).populate('labourerId');
-        if (!training) { return res.status(404).json({ message: "No labourer found with the id" }) }
-
-        training.trainingStatus = !training.trainingStatus
-        await training.save();
-        training.labourerId.availability = !training.labourerId.availability
-        await training.labourerId.save();
-
-        res.status(200).json({ message: `Training status updated successfully` })
-    }
-    catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.status })
-    }
-};
-
 
 // exports.createOrAddService = async (req, res) => {
 //     try {
@@ -622,74 +678,6 @@ exports.getAllLabourers = async (req, res) => {
     }
 };
 
-exports.acceptApplicant = async (req, res) => {
-    try {
-        const applicantId = req.params.id;
-
-        // 1️⃣ Find the labourer
-        const labourer = await Labourer.findById(applicantId);
-        if (!labourer) {
-            return res.status(404).json({ message: 'Applicant not found.' });
-        }
-
-        // 2️⃣ Update status to Accepted
-        labourer.status = 'Accepted';
-        // Optionally, you can update trainingStatus or isAvailable if needed
-        labourer.isAvailable = true; // make them available upon acceptance
-        await labourer.save();
-
-        // 3️⃣ Update user role to 'Labourer' (if not already)
-        const user = await User.findById(labourer.userId);
-        if (user) {
-            user.role = 'Labourer';
-            await user.save();
-        }
-
-        res.status(200).json({
-            message: 'Applicant accepted successfully.',
-            applicant: labourer,
-        });
-    } catch (error) {
-        console.error('Error accepting applicant:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-};
-
-exports.markTrainingCompleted = async (req, res) => {
-    try {
-        const labourerId = req.params.id;
-        const { cost, experience } = req.body; // optional fields
-
-        // Find the labourer
-        const labourer = await Labourer.findById(labourerId);
-        if (!labourer) {
-            return res.status(404).json({ message: 'Labourer not found.' });
-        }
-
-        // Update training status
-        labourer.trainingStatus = 'Completed';
-
-        // Optional: update cost and experience
-        if (cost !== undefined) labourer.cost = cost;
-        if (experience !== undefined) labourer.experience = experience;
-
-        await labourer.save();
-
-        res.status(200).json({
-            success: true,
-            message: 'Training marked as completed successfully.',
-            labourer
-        });
-
-    } catch (error) {
-        console.error('Error marking training completed:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
-    }
-};
 
 
 exports.getAcceptedLabourers = async (req, res) => {
@@ -1928,4 +1916,513 @@ exports.suspendLabour = async (req, res) => {
             error: error.message,
         });
     }
+};
+
+exports.getPendingLabourers = async (req, res) => {
+    try {
+        const { serviceCity, registrationType } = req.query;
+
+        // ✅ Base filter for pending labourers
+        const filter = { status: 'Pending' };
+
+        // ✅ Filter by city (case-insensitive)
+        if (serviceCity) {
+            filter.serviceCity = { $regex: new RegExp(serviceCity, 'i') };
+        }
+
+        // ✅ Filter by registrationType (Professional, Individual, Team)
+        if (registrationType) {
+            filter.registrationType = registrationType;
+        }
+
+        // ✅ Fetch labourers with related user and category info
+        const labourers = await Labourer.find(filter)
+            .populate('userId', '-password -otp -otpExpiry -googleId -__v')
+            .populate('category', 'title image')
+            .lean();
+
+        if (!labourers.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'No pending labourers found',
+            });
+        }
+
+        // ✅ Collect userIds to get training details
+        const labourerUserIds = labourers.map(l => l.userId?._id).filter(Boolean);
+
+        const trainingDetails = await TrainingDetails.find({
+            labourerId: { $in: labourerUserIds }
+        }).lean();
+
+        // ✅ Merge training details with labourer info
+        const combinedData = labourers.map(labourer => {
+            const training = trainingDetails.find(
+                t => t.labourerId.toString() === labourer.userId?._id.toString()
+            );
+            return { ...labourer, trainingDetails: training || null };
+        });
+
+        return res.status(200).json({
+            success: true,
+            total: combinedData.length,
+            data: combinedData,
+        });
+    } catch (error) {
+        console.error('Error fetching pending labourers:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error.message,
+        });
+    }
+};
+
+exports.filterLabourers = async (req, res) => {
+    try {
+        const { registrationType, serviceCity, trainingStatus } = req.query;
+
+        // 1️⃣ Build filters
+        const filter = {};
+        if (registrationType) filter.registrationType = registrationType;
+        if (serviceCity) filter.serviceCity = { $regex: new RegExp(serviceCity, "i") };
+        if (trainingStatus) filter.trainingStatus = trainingStatus;
+
+        // 2️⃣ Fetch filtered labourers
+        const labourers = await Labourer.find(filter)
+            .populate("userId", "_id name email mobileNumber")
+            .populate("category", "title image")
+            .sort({ createdAt: -1 });
+
+        if (!labourers.length) {
+            return res.status(404).json({
+                success: false,
+                message: "No labourers found matching the given filters",
+            });
+        }
+
+        // 3️⃣ Get all userIds for training lookup
+        const userIds = labourers.map(l => l.userId?._id);
+
+        // 4️⃣ Fetch training details for all labourers
+        const trainingDetails = await TrainingDetails.find({
+            labourerId: { $in: userIds },
+        });
+
+        // 5️⃣ Create a map for quick lookup
+        const trainingMap = {};
+        trainingDetails.forEach(td => {
+            trainingMap[td.labourerId.toString()] = td;
+        });
+
+        // 6️⃣ Format response
+        const formattedLabourers = labourers.map(l => {
+            const training = trainingMap[l.userId?._id?.toString()] || null;
+
+            return {
+                userId: l.userId?._id || null,
+                name: l.userId?.name || null,
+                email: l.userId?.email || null,
+                mobileNumber: l.userId?.mobileNumber || null,
+                registrationType: l.registrationType,
+                serviceCity: l.serviceCity,
+                trainingStatus: l.trainingStatus,
+                category: l.category ? {
+                    title: l.category.title,
+                    image: l.category.image
+                } : null,
+                trainingDetails: training ? {
+                    startDate: training.startDate,
+                    endDate: training.endDate,
+                    timings: training.timings,
+                    location: training.location,
+                    image: training.image
+                } : null
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            total: formattedLabourers.length,
+            filtersApplied: { registrationType, serviceCity, trainingStatus },
+            data: formattedLabourers,
+        });
+    } catch (err) {
+        console.error("❌ Error filtering labourers:", err);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: err.message,
+        });
+    }
+};
+
+exports.getPendingLabourRequests = async (req, res) => {
+    try {
+        const { registrationType, serviceCity } = req.query;
+
+        // ✅ Build filter
+        const filter = {};
+        if (registrationType) filter.registrationType = registrationType;
+        if (serviceCity) filter.serviceCity = { $regex: new RegExp(serviceCity, 'i') };
+
+        // ✅ Fetch labourers
+        const labourers = await Labourer.find(filter)
+            .populate('userId', '-password -otp -otpExpiry -googleId -__v')
+            .lean();
+
+        if (!labourers.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'No labourers found for the given filters',
+            });
+        }
+
+        // ✅ Collect userIds
+        const userIds = labourers.map(l => l.userId?._id).filter(Boolean);
+
+        // ✅ Fetch pending requests
+        const pendingServices = await AcceptedService.find({
+            labourer: { $in: userIds },
+            status: 'Pending'
+        })
+            .populate('categories', 'title image')
+            .lean();
+
+        const pendingSkills = await AcceptedSkill.find({
+            labourer: { $in: userIds },
+            status: 'Pending'
+        }).lean();
+
+        // ✅ Combine labourer info with their pending requests
+        const result = labourers.map(labourer => {
+            const userIdStr = labourer.userId?._id.toString();
+
+            const services = pendingServices.filter(s => s.labourer.toString() === userIdStr);
+            const skills = pendingSkills.filter(s => s.labourer.toString() === userIdStr);
+
+            return {
+                _id: labourer._id,
+                userId: labourer.userId,
+                registrationType: labourer.registrationType,
+                serviceCity: labourer.serviceCity,
+                address: labourer.address,
+                status: labourer.status,
+                trainingStatus: labourer.trainingStatus,
+                pendingServices: services.length ? services : null,
+                pendingSkills: skills.length ? skills : null
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            total: result.length,
+            data: result
+        });
+
+    } catch (error) {
+        console.error('Error fetching pending labour requests:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error.message
+        });
+    }
+};
+
+
+// Service Management  
+exports.getCounts = async (req, res) => {
+    try {
+        // Count documents in each collection
+        const [categoryCount, subCategoryCount, specificServiceCount] = await Promise.all([
+            Category.countDocuments(),
+            SubCategory.countDocuments(),
+            SpecificService.countDocuments()
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            counts: {
+                totalCategories: categoryCount,
+                totalSubCategories: subCategoryCount,
+                totalSpecificServices: specificServiceCount
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching counts:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error.message
+        });
+    }
+};
+
+
+exports.getAllSpecificServices = async (req, res) => {
+    try {
+        // 🔹 Extract filters & pagination from query params
+        const { categoryId, minRating = 0, page = 1, limit = 10 } = req.query;
+
+        // 🔹 Convert pagination to numbers
+        const pageNumber = parseInt(page);
+        const limitNumber = parseInt(limit);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // 🔹 Match filter stage (if categoryId exists)
+        const matchStage = {};
+        if (categoryId) {
+            matchStage['category._id'] = new mongoose.Types.ObjectId(categoryId);
+        }
+
+        const services = await SpecificService.aggregate([
+            // 1️⃣ Lookup ServiceType
+            {
+                $lookup: {
+                    from: 'servicetypes',
+                    localField: 'serviceType',
+                    foreignField: '_id',
+                    as: 'serviceType'
+                }
+            },
+            { $unwind: '$serviceType' },
+
+            // 2️⃣ Lookup Appliances
+            {
+                $lookup: {
+                    from: 'appliancestypes',
+                    localField: 'serviceType.appliances',
+                    foreignField: '_id',
+                    as: 'appliance'
+                }
+            },
+            { $unwind: '$appliance' },
+
+            // 3️⃣ Lookup Subcategory
+            {
+                $lookup: {
+                    from: 'subcategories',
+                    localField: 'appliance.subCategory',
+                    foreignField: '_id',
+                    as: 'subCategory'
+                }
+            },
+            { $unwind: '$subCategory' },
+
+            // 4️⃣ Lookup Category
+            {
+                $lookup: {
+                    from: 'categories',
+                    localField: 'subCategory.category',
+                    foreignField: '_id',
+                    as: 'category'
+                }
+            },
+            { $unwind: '$category' },
+
+            // 5️⃣ Lookup Units (for ratings)
+            {
+                $lookup: {
+                    from: 'units',
+                    localField: '_id',
+                    foreignField: 'specificService',
+                    as: 'units'
+                }
+            },
+
+            // 6️⃣ Calculate averageRating and totalReviews
+            {
+                $addFields: {
+                    averageRating: {
+                        $cond: [
+                            { $eq: [{ $size: "$units" }, 0] },
+                            0,
+                            {
+                                $divide: [
+                                    {
+                                        $sum: {
+                                            $map: {
+                                                input: "$units",
+                                                as: "u",
+                                                in: { $multiply: ["$$u.averageRating", "$$u.totalReviews"] }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        $max: [
+                                            1, // prevent divide by zero
+                                            { $sum: "$units.totalReviews" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    totalReviews: { $sum: "$units.totalReviews" }
+                }
+            },
+
+            // 7️⃣ Project required fields (SpecificService details under serviceType)
+            {
+                $project: {
+                    serviceType: {
+                        _id: "$_id",
+                        title: "$title",
+                        startingPrice: "$startingPrice",
+                        image: "$image"
+                    },
+                    averageRating: { $round: ["$averageRating", 1] },
+                    totalReviews: 1,
+                    subCategory: "$subCategory.title",
+                    category: { _id: "$category._id", title: "$category.title" }
+                }
+            },
+
+            // 8️⃣ Match filters (category + rating)
+            {
+                $match: {
+                    ...(categoryId ? { "category._id": new mongoose.Types.ObjectId(categoryId) } : {}),
+                    averageRating: { $gte: Number(minRating) }
+                }
+            },
+
+            // 9️⃣ Sort by highest rated first
+            { $sort: { averageRating: -1 } },
+
+            // 🔟 Pagination
+            { $skip: skip },
+            { $limit: limitNumber }
+        ]);
+
+        // 🔹 Get total count for pagination info
+        const totalCount = await SpecificService.aggregate([
+            {
+                $lookup: {
+                    from: 'servicetypes',
+                    localField: 'serviceType',
+                    foreignField: '_id',
+                    as: 'serviceType'
+                }
+            },
+            { $unwind: '$serviceType' },
+            {
+                $lookup: {
+                    from: 'appliancestypes',
+                    localField: 'serviceType.appliances',
+                    foreignField: '_id',
+                    as: 'appliance'
+                }
+            },
+            { $unwind: '$appliance' },
+            {
+                $lookup: {
+                    from: 'subcategories',
+                    localField: 'appliance.subCategory',
+                    foreignField: '_id',
+                    as: 'subCategory'
+                }
+            },
+            { $unwind: '$subCategory' },
+            {
+                $lookup: {
+                    from: 'categories',
+                    localField: 'subCategory.category',
+                    foreignField: '_id',
+                    as: 'category'
+                }
+            },
+            { $unwind: '$category' },
+            {
+                $match: {
+                    ...(categoryId ? { "category._id": new mongoose.Types.ObjectId(categoryId) } : {})
+                }
+            },
+            { $count: "total" }
+        ]);
+
+        const total = totalCount.length ? totalCount[0].total : 0;
+
+        return res.status(200).json({
+            success: true,
+            total,
+            page: pageNumber,
+            limit: limitNumber,
+            data: services
+        });
+    } catch (err) {
+        console.error("Error in getAllSpecificServices:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: err.message
+        });
+    }
+};
+
+exports.getSpecificServiceDetails = async (req, res) => {
+  try {
+    const { specificServiceId } = req.params;
+
+    // 1️⃣ Find the specific service and populate the entire chain
+    const specificService = await SpecificService.findById(specificServiceId)
+      .populate({
+        path: "serviceType",
+        populate: {
+          path: "appliances",
+          populate: {
+            path: "subCategory",
+            populate: { path: "category" }
+          }
+        }
+      })
+      .lean();
+
+    if (!specificService) {
+      return res.status(404).json({ success: false, message: "Specific service not found" });
+    }
+
+    // 2️⃣ Find all related Units for that specific service
+    const units = await Unit.find({ specificService: specificServiceId })
+      .select("_id title price discountedPercentage image totalReviews averageRating")
+      .lean();
+
+    // 3️⃣ Build the structured response
+    const response = {
+      _id: specificService._id,
+      title: specificService.title,
+      image: specificService.image,
+      startingPrice: specificService.startingPrice,
+      serviceType: {
+        _id: specificService.serviceType._id,
+        title: specificService.serviceType.title,
+        image: specificService.serviceType.image,
+      },
+      appliance: {
+        _id: specificService.serviceType.appliances._id,
+        title: specificService.serviceType.appliances.title,
+        image: specificService.serviceType.appliances.image,
+      },
+      subCategory: {
+        _id: specificService.serviceType.appliances.subCategory._id,
+        title: specificService.serviceType.appliances.subCategory.title,
+        image: specificService.serviceType.appliances.subCategory.image,
+      },
+      category: {
+        _id: specificService.serviceType.appliances.subCategory.category._id,
+        title: specificService.serviceType.appliances.subCategory.category.title,
+        image: specificService.serviceType.appliances.subCategory.category.image,
+      }
+    };
+
+    // 4️⃣ Send final response
+    return res.status(200).json({
+      success: true,
+      specificService: response,
+      units,
+    });
+  } catch (error) {
+    console.error("Error fetching specific service details:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
 };

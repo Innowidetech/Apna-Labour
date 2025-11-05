@@ -80,10 +80,10 @@ const LabourerSchema = new mongoose.Schema({
     isAvailable: { type: Boolean, default: true },
     trainingStatus: {
         type: String,
-        enum: ['Completed', 'Not Completed'],
+        enum: ['Completed', 'On Going', 'Not Completed', 'Rejected'],
         default: 'Not Completed'
     },
-    registerDate: { type: Date, default: Date.now },
+    registerDate: { type: Date, default: '' },
     completedJobs: { type: Number, default: 0 },
     complants: { type: Number, default: 0 },
     traingScore: { type: Number, default: 70 },

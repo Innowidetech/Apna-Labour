@@ -7,34 +7,34 @@ const AcceptedServiceSchema = new mongoose.Schema({
         required: true
     },
 
-    // ✅ Multiple categories allowed
+    //  Multiple categories allowed
     categories: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Category',
         required: true
     }],
 
-    // ✅ Multiple subcategories allowed
+    //  Multiple subcategories allowed
     subCategories: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'SubCategory',
         required: true
     }],
 
-    // ✅ Multiple service types allowed
+    //  Multiple service types allowed
     serviceTypes: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'ServiceType',
         required: true
     }],
 
-    // 🕒 When admin approved the service(s)
+    //  When admin approved the service(s)
     approvedDate: {
         type: Date,
         default: Date.now
     },
 
-    // 🔖 Admin or system status
+    // Admin or system status
     status: {
         type: String,
         enum: ['Pending', 'Approved', 'Rejected'],
@@ -42,7 +42,7 @@ const AcceptedServiceSchema = new mongoose.Schema({
     },
 
     // 📝 Optional remarks from admin
-    remarks: { type: String, default: '' },
+    message: { type: String, default: '' },
     bookingFee: { type: Number, default: 200 },
 
 }, { timestamps: true });

@@ -1,4 +1,4 @@
-const acceptedTrainingMail = (name, location, startDate, endDate, timing, imageUrl) => `
+const acceptedTrainingMail = ( location, startDate, endDate, timing, imageUrl) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,7 +64,6 @@ const acceptedTrainingMail = (name, location, startDate, endDate, timing, imageU
       <h1>🎉 Training Accepted!</h1>
     </div>
     <div class="body">
-      <p>Hello <b>${name}</b>,</p>
       <p>We’re happy to inform you that you’ve been <b>accepted</b> for the upcoming training session organized by <b>Apna Labour</b>.</p>
 
       <div class="details-box">

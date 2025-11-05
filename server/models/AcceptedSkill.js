@@ -39,7 +39,7 @@ const AcceptedSkillSchema = new mongoose.Schema({
     },
 
     //  Optional remarks from admin
-    remarks: {
+    message: {
         type: String,
         default: ''
     },

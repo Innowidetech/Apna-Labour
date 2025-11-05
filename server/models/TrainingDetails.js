@@ -6,7 +6,6 @@ const TrainingDetailsSchema = new mongoose.Schema({
     endDate: { type: Date, required: true },
     timings: { type: String, required: true },
     location: { type: String, required: true },
-    trainingStatus: { type: Boolean, default: false, required: true },
     image: { type: String, required: true } 
 }, { timestamps: true });
 
