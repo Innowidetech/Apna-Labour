@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require("uuid");
 const bookingSchema = new mongoose.Schema(
     {
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        acceptedLabour: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
         bookingId: {
             type: String,
             unique: true,

@@ -150,7 +150,7 @@ exports.createOrAddReview = async (req, res) => {
 exports.addToCart = async (req, res) => {
     try {
         const userId = req.user ? req.user.userId : null;
-        let guestId = req.headers["x-guest-id"]; // 👈 read from frontend header
+        let guestId = req.headers["x-guest-id"]; //  read from frontend header
 
         // Create guestId if not logged in
         if (!userId && !guestId) {
@@ -298,15 +298,15 @@ exports.getCart = async (req, res) => {
         });
 
         const taxRate = 0.12; // 12% GST
-        const tax = +(subtotal * taxRate).toFixed(2);
+        const tax = +(subtotal * taxRate).toFixed(0);
         const tip = cart.tip || 0; // ✅ include tip
-        const totalAmount = +(subtotal + tax + tip).toFixed(2);
+        const totalAmount = +(subtotal + tax + tip).toFixed(0);
 
         // ✅ Response
         return res.status(200).json({
             message: "Cart fetched successfully",
             items,
-            subtotal: +subtotal.toFixed(2),
+            subtotal: +subtotal.toFixed(0),
             tax,
             tip,
             totalAmount,
@@ -378,7 +378,7 @@ exports.removeFromCart = async (req, res) => {
         const cart = await Cart.findOne(query);
 
         if (!cart) {
-            return res.status(404).json({ message: "Cart not found" });
+            return res.status(404).json({ message: "  not found" });
         }
 
         // Remove the item
@@ -1242,8 +1242,8 @@ exports.createBooking = async (req, res) => {
         let subtotal = 0;
         cart.items.forEach((item) => (subtotal += item.price * item.quantity));
         const taxRate = 0.12; // 10% GST
-        const tax = +(subtotal * taxRate).toFixed(2);
-        const totalAmount = +(subtotal + tax + tip).toFixed(2);
+        const tax = +(subtotal * taxRate).toFixed(0);
+        const totalAmount = +(subtotal + tax + tip).toFixed(0);
 
         // ✅ Create booking with default paymentMethod as Razorpay
         const booking = new Booking({
@@ -1443,6 +1443,30 @@ exports.addUnitReview = async (req, res) => {
         });
 
         await review.save();
+
+        const reviews = await Review.find({ targetId: unitId, targetType: "Unit" });
+        const totalReviews = reviews.length;
+        const averageRating = reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews;
+
+        unit.averageRating = averageRating;
+        unit.totalReviews = totalReviews;
+        await unit.save();
+
+        // 5️⃣ Recalculate ratings for SpecificService
+        const serviceUnits = await Unit.find({ specificService: unit.specificService });
+        let totalServiceReviews = 0;
+        let weightedRatingSum = 0;
+
+        serviceUnits.forEach(u => {
+            totalServiceReviews += u.totalReviews;
+            weightedRatingSum += u.averageRating * u.totalReviews;
+        });
+
+        const specificService = await SpecificService.findById(unit.specificService);
+        specificService.totalReviews = totalServiceReviews;
+        specificService.averageRating =
+            totalServiceReviews > 0 ? weightedRatingSum / totalServiceReviews : 0;
+        await specificService.save();
         return res.status(201).json({ message: "Review added successfully", review });
     } catch (err) {
         return res.status(500).json({ message: "Internal server error", error: err.message });

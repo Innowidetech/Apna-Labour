@@ -72,10 +72,11 @@ exports.createPaymentOrder = async (req, res) => {
         }
 
         // 2️⃣ Get total amount based on model
-        const totalAmount =
+        const totalAmount = Math.round(
             bookingType === "labour"
-                ? booking.totalCost * 100
-                : booking.totalAmount * 100;
+                ? Number(booking.totalCost) * 100
+                : Number(booking.totalAmount) * 100
+        );
 
         // 3️⃣ Create Razorpay order
         const order = await razorpay.orders.create({

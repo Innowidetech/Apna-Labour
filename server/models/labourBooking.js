@@ -55,7 +55,7 @@ const labourBookingSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       enum: ["Razorpay", "UPI", "NetBanking", "COD"],
-      default: "COD",
+      default: "Razorpay",
     },
     paymentStatus: {
       type: String,
