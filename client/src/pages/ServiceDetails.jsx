@@ -92,6 +92,9 @@ const ServiceDetails = () => {
       setIsLoadingSubcategories(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+
+      setActiveLabourType("Team");
+    fetchCasualLabour("Team");
   }, [id]);
 
   // Fetch hero
