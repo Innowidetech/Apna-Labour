@@ -1189,7 +1189,7 @@ exports.saveSlot = async (req, res) => {
                 totalAmount: subtotal,
                 bookingDate,
                 timeSlot,
-                paymentMethod: "COD",
+                paymentMethod: "Razorpay",
             });
         } else {
             // Update existing booking

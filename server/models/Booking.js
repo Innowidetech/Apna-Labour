@@ -43,7 +43,7 @@ const bookingSchema = new mongoose.Schema(
         orderId: { type: String },   // Razorpay order id
         signature: { type: String }, // Razorpay signature
 
-        paymentMethod: { type: String, enum: ["Razorpay", "COD"], required: true },
+        paymentMethod: { type: String, enum: ["Razorpay", "COD"], default: "Razorpay", },
         completedAt: { type: Date, default: null },
         bookedAt: { type: Date, default: Date.now },
     },

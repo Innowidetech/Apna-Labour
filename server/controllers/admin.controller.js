@@ -759,8 +759,6 @@ exports.createNotificationForUser = async (req, res) => {
     }
 };
 
-
-
 exports.getContacts = async (req, res) => {
     try {
         const contacts = await Contact.find().sort({ createdAt: -1 });
@@ -781,13 +779,13 @@ exports.createHeroAppliance = async (req, res) => {
                 .json({ message: "Title, image, and appliance are required" });
         }
 
-        // ✅ Check if appliance exists
+        //  Check if appliance exists
         const appliance = await AppliancesType.findById(applianceId);
         if (!appliance) {
             return res.status(404).json({ message: "Appliance not found" });
         }
 
-        // ✅ Check if hero section already exists for this appliance
+        //  Check if hero section already exists for this appliance
         const existingHero = await HeroAppliance.findOne({ appliance: applianceId });
         if (existingHero) {
             return res
@@ -795,13 +793,13 @@ exports.createHeroAppliance = async (req, res) => {
                 .json({ message: "Hero section for this appliance already exists" });
         }
 
-        // ✅ Upload image
+        //  Upload image
         const uploadImage = await uploadMedia(imgFile);
         if (!uploadImage || !uploadImage[0]) {
             return res.status(500).json({ message: "Image upload failed" });
         }
 
-        // ✅ Save new hero appliance
+        //  Save new hero appliance
         const heroAppliance = new HeroAppliance({
             title,
             image: uploadImage[0],
@@ -852,7 +850,6 @@ exports.createHelpCenter = async (req, res) => {
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
-
 exports.getAdminProfile = async (req, res) => {
     try {
         const adminId = req.user?.userId; // from auth middleware
@@ -2158,8 +2155,6 @@ exports.getCounts = async (req, res) => {
         });
     }
 };
-
-
 exports.getAllSpecificServices = async (req, res) => {
     try {
         // 🔹 Extract filters & pagination from query params
@@ -2361,68 +2356,70 @@ exports.getAllSpecificServices = async (req, res) => {
 };
 
 exports.getSpecificServiceDetails = async (req, res) => {
-  try {
-    const { specificServiceId } = req.params;
+    try {
+        const { specificServiceId } = req.params;
 
-    // 1️⃣ Find the specific service and populate the entire chain
-    const specificService = await SpecificService.findById(specificServiceId)
-      .populate({
-        path: "serviceType",
-        populate: {
-          path: "appliances",
-          populate: {
-            path: "subCategory",
-            populate: { path: "category" }
-          }
+        // Find the specific service and populate the full hierarchy
+        const specificService = await SpecificService.findById(specificServiceId)
+            .populate({
+                path: "serviceType",
+                populate: {
+                    path: "appliances",
+                    populate: {
+                        path: "subCategory",
+                        populate: { path: "category" }
+                    }
+                }
+            })
+            .lean();
+
+        if (!specificService) {
+            return res.status(404).json({ success: false, message: "Specific service not found" });
         }
-      })
-      .lean();
 
-    if (!specificService) {
-      return res.status(404).json({ success: false, message: "Specific service not found" });
+        // Get all related units
+        const units = await Unit.find({ specificService: specificServiceId })
+            .select("_id title price discountedPercentage image totalReviews averageRating")
+            .lean();
+
+        // Calculate total reviews across all units
+        const totalReviews = units.reduce((sum, unit) => sum + (unit.totalReviews || 0), 0);
+
+        // Build the structured response
+        const response = {
+            _id: specificService._id,
+            title: specificService.title,
+            image: specificService.image,
+            startingPrice: specificService.startingPrice,
+            serviceType: {
+                _id: specificService.serviceType._id,
+                title: specificService.serviceType.title,
+            },
+            appliance: {
+                _id: specificService.serviceType.appliances._id,
+                title: specificService.serviceType.appliances.title,
+            },
+            subCategory: {
+                _id: specificService.serviceType.appliances.subCategory._id,
+                title: specificService.serviceType.appliances.subCategory.title,
+            },
+            category: {
+                _id: specificService.serviceType.appliances.subCategory.category._id,
+                title: specificService.serviceType.appliances.subCategory.category.title,
+            },
+            totalReviews // total reviews for this specific service
+        };
+
+        // Final response
+        return res.status(200).json({
+            success: true,
+            specificService: response,
+            units,
+        });
+
+    } catch (error) {
+        console.error("Error fetching specific service details:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
-
-    // 2️⃣ Find all related Units for that specific service
-    const units = await Unit.find({ specificService: specificServiceId })
-      .select("_id title price discountedPercentage image totalReviews averageRating")
-      .lean();
-
-    // 3️⃣ Build the structured response
-    const response = {
-      _id: specificService._id,
-      title: specificService.title,
-      image: specificService.image,
-      startingPrice: specificService.startingPrice,
-      serviceType: {
-        _id: specificService.serviceType._id,
-        title: specificService.serviceType.title,
-        image: specificService.serviceType.image,
-      },
-      appliance: {
-        _id: specificService.serviceType.appliances._id,
-        title: specificService.serviceType.appliances.title,
-        image: specificService.serviceType.appliances.image,
-      },
-      subCategory: {
-        _id: specificService.serviceType.appliances.subCategory._id,
-        title: specificService.serviceType.appliances.subCategory.title,
-        image: specificService.serviceType.appliances.subCategory.image,
-      },
-      category: {
-        _id: specificService.serviceType.appliances.subCategory.category._id,
-        title: specificService.serviceType.appliances.subCategory.category.title,
-        image: specificService.serviceType.appliances.subCategory.category.image,
-      }
-    };
-
-    // 4️⃣ Send final response
-    return res.status(200).json({
-      success: true,
-      specificService: response,
-      units,
-    });
-  } catch (error) {
-    console.error("Error fetching specific service details:", error);
-    res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
 };
+

@@ -8,7 +8,7 @@ const { getAllUsers, approveLabourerTraining, completeTraining,
     getAdminDashboard, getAdminProfile, getBookingsByDate, getTop4DemandingServicesByMonth, getCustomerDetailsByBooking,
     getFilteredCustomers, getProfessionalLabourers, getIndividualLabourers, getTeamLabourers, getProfessionalLabourerDetails,
     getIndividualTeamLabourerDetails, getSuspendedAccounts, suspendLabour, rejectTraining, filterLabourers, getPendingLabourers,
-    getPendingLabourRequests, getCounts, getAllSpecificServices
+    getPendingLabourRequests, getCounts, getAllSpecificServices, getSpecificServiceDetails
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -25,7 +25,6 @@ router.post('/service-type', protect, authorize('Admin'), upload.fields([{ name:
 router.post('/specific-services', protect, authorize('Admin'), upload.fields([{ name: 'image', maxCount: 1 }]), createSpecificService);
 router.post("/units", protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), createUnit);
 
-router.put('/update-unit/:unitId', protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), updateUnit);
 
 router.delete('/delete-unit/:unitId', protect, authorize("Admin"), deleteUnit);
 
@@ -72,5 +71,11 @@ router.get("/pending-labour-requests", protect, authorize("Admin"), getPendingLa
 // Service Management
 router.get('/sevices/count', protect, authorize('Admin'), getCounts);
 router.get('/specific-services/info', protect, authorize('Admin'), getAllSpecificServices);// ?categoryId=68ce4005590c8b52ff28d84e&minRating=0&page=1&limit=10
+router.get('/specific-services/unit/info/:specificServiceId', protect, authorize('Admin'), getSpecificServiceDetails);
+router.put('/update-unit/:unitId', protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), updateUnit);
+
+
+// 
+
 
 module.exports = router;
