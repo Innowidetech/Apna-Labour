@@ -6,9 +6,8 @@ const labourBookingSchema = new mongoose.Schema(
     // Unique Booking ID
     bookingNo: {
       type: String,
-      unique: true,
       default: function () {
-        return "BK-" + uuidv4().split("-")[0].toUpperCase();
+        return "LB-" + uuidv4().split("-")[0].toUpperCase();
       },
     },
 

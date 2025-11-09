@@ -5,10 +5,11 @@ const { getAllUsers, approveLabourerTraining, completeTraining,
     getSubCategoriesByCategory, getAppliancesBySubCategory, getServiceTypesByAppliance, getSpecificServicesByServiceType, getUnitsBySpecificService,
     delServiceType, getAllLabourers, getAcceptedLabourers, createNotificationForAll, getContacts, createHeroSection,
     createHeroAppliance, createHelpCenter, getAllHelpCenters, updateUnit, deleteUnit, createNotificationForUser,
-    getAdminDashboard, getAdminProfile, getBookingsByDate, getTop4DemandingServicesByMonth, getCustomerDetailsByBooking,
+    getAdminDashboard, getAdminProfile, getBookingsByDate, getTop4DemandingServicesByMonth, getCustomerDetailsByUserId,
     getFilteredCustomers, getProfessionalLabourers, getIndividualLabourers, getTeamLabourers, getProfessionalLabourerDetails,
     getIndividualTeamLabourerDetails, getSuspendedAccounts, suspendLabour, rejectTraining, filterLabourers, getPendingLabourers,
-    getPendingLabourRequests, getCounts, getAllSpecificServices, getSpecificServiceDetails
+    getPendingLabourRequests, getCounts, getAllSpecificServices, getSpecificServiceDetails, getGeneralEnquiries,
+    getAccountBillingEnquiries, getFeedbacks, replyToContact, markAsRead, getAllRefunds, getBookingDetailsById
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -42,12 +43,15 @@ router.post("/accordian", protect, authorize('Admin'), createHelpCenter);
 
 router.get("/contacts", protect, authorize("Admin"), getContacts);
 
+// admin
+
 router.get("/dashboard", protect, authorize("Admin"), getAdminDashboard);
 router.get('/profile', protect, getAdminProfile);
 router.get("/bookings/by-date", protect, authorize("Admin"), getBookingsByDate);
-router.get('/booking/:bookingId/details', protect, authorize('Admin'), getCustomerDetailsByBooking);
+router.get("/:bookingId/details", protect, authorize("Admin"), getBookingDetailsById)
+router.get('/booking/:userId/details', protect, authorize('Admin'), getCustomerDetailsByUserId);
 router.get("/most-demanding-services", protect, authorize("Admin"), getTop4DemandingServicesByMonth);
-router.get("/all/customers/filter", protect, authorize("Admin"), getFilteredCustomers);
+router.get("/all/customers/filter", protect, authorize("Admin"), getFilteredCustomers); //?city=Karimnagar&status=Active
 router.get("/labourers/professional/:userId", protect, authorize("Admin"), getProfessionalLabourerDetails);
 router.get("/labourer/individual-team/:userId", protect, authorize("Admin"), getIndividualTeamLabourerDetails);
 router.get("/suspended-accounts", protect, authorize("Admin"), getSuspendedAccounts);
@@ -75,7 +79,19 @@ router.get('/specific-services/unit/info/:specificServiceId', protect, authorize
 router.put('/update-unit/:unitId', protect, authorize("Admin"), upload.fields([{ name: "image", maxCount: 1 }]), updateUnit);
 
 
-// 
+
+
+// Reports and Analytics
+// Refund Management
+// Queries
+router.get('/contact/general-enquiry', protect, authorize("Admin"), getGeneralEnquiries);
+router.get('/contact/account-billing-enquiry', getAccountBillingEnquiries);
+router.get('/contact/feedback', getFeedbacks);
+router.post("/contact/:id/reply", protect, authorize("Admin"), replyToContact);
+router.put("/contact/:id/read", protect, authorize("Admin"), markAsRead);
+
+router.get("/refund", getAllRefunds);
+
 
 
 module.exports = router;

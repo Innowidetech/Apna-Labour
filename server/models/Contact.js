@@ -15,6 +15,9 @@ const ContactSchema = new mongoose.Schema({
         match: [/\S+@\S+\.\S+/, 'Invalid email address'],
         required: false // email optional
     },
+    read: { type: Boolean, default: false },
+    replied: { type: Boolean, default: false },
+    repliedAt: { type: Date },
     mobileNumber: { type: String, required: true }
 }, { timestamps: true });
 

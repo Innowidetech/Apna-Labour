@@ -42,7 +42,7 @@ const RefundSchema = new mongoose.Schema(
         // Refund Status Tracking
         status: {
             type: String,
-            enum: ["requested", "approved", "rejected", "processed"],
+            enum: ["requested", "completed", "rejected", "processed"],
             default: "requested"
         },
 

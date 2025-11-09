@@ -19,6 +19,8 @@ const { sendEmail } = require('../utils/nodemailer');
 const trainingCompletionMail = require('../utils/trainingCompletionMail');
 const serviceRejectionMail = require('../utils/serviceRejectionMail');
 const trainingRejectionMail = require('../utils/trainingRejectionMail');
+const contactReplyMail = require("../utils/contactReplyMail");
+const Refund = require('../models/Refund');
 const mongoose = require('mongoose');
 
 const {
@@ -935,33 +937,37 @@ exports.getAdminDashboard = async (req, res) => {
 exports.getBookingsByDate = async (req, res) => {
     try {
         const { date } = req.query;
-        if (!date) return res.status(400).json({ success: false, message: "Date is required" });
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: "Date is required",
+            });
+        }
 
-        // Start & end of the day
+        // 1️⃣ Define UTC date range for filtering
         const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
+        startOfDay.setUTCHours(0, 0, 0, 0);
 
         const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
+        endOfDay.setUTCHours(23, 59, 59, 999);
 
-        // Fetch bookings
+        // 2️⃣ Fetch bookings within the date range
         const bookings = await Booking.find({
-            bookingDate: { $gte: startOfDay, $lte: endOfDay },
+            bookedAt: { $gte: startOfDay, $lte: endOfDay },
         })
-            .populate("user", "name")                 // Customer name
-            .populate("items.unit", "title")          // Fetch service title from Unit
+            .populate("user", "name email phone") // Customer info
+            .populate("acceptedLabour", "name phone labourType") // Labour info from same User model
             .lean();
 
+        // 3️⃣ Format response
         const formatted = bookings.map((b) => {
             const customerName = b.user?.name || "Unknown";
+            const customerPhone = b.user?.phone || "N/A";
 
-            // Extract all service titles in this booking
-            const services = b.items?.map(item => item.unit?.title || "Service").join(", ") || "Service";
+            const labourName = b.acceptedLabour?.name || "Not assigned";
+            const labourPhone = b.acceptedLabour?.phone || "N/A";
+            const labourType = b.acceptedLabour?.labourType || "N/A";
 
-            // Labourer info
-            const labourer = b.labourerName || (b.status === "Pending" ? "Not assigned" : "—");
-
-            // Payment info
             const paymentStatus =
                 b.paymentMethod === "Razorpay"
                     ? `₹${b.totalAmount} - Paid`
@@ -970,11 +976,18 @@ exports.getBookingsByDate = async (req, res) => {
                         : "Unpaid";
 
             return {
-                _id: b._id,
-                bookingId: b.bookingId,
+                bookingId: b._id,
+                bookingNo: b.bookingNo,
                 customer: customerName,
-                service: services,      // Correct service titles
-                time: new Date(b.bookingDate).toLocaleString("en-IN", {
+                customerPhone,
+                acceptedLabourId: b.acceptedLabour?._id || null, // ✅ Shows user ID of accepted labour
+                acceptedLabour: labourName, // ✅ Shows labour name
+                labourType,
+                paymentMethod: b.paymentMethod,
+                labourPhone,
+                status: b.status,
+                payment: paymentStatus,
+                bookedAt: new Date(b.bookedAt).toLocaleString("en-IN", {
                     day: "2-digit",
                     month: "short",
                     year: "numeric",
@@ -982,39 +995,148 @@ exports.getBookingsByDate = async (req, res) => {
                     minute: "2-digit",
                     hour12: true,
                 }),
-                labour: labourer,
-                status: b.status,
-                payment: paymentStatus,
+                totalAmount: b.totalAmount,
             };
         });
 
-        res.status(200).json({ success: true, data: formatted });
+        // 4️⃣ Send formatted response
+        res.status(200).json({
+            success: true,
+            data: formatted,
+        });
     } catch (error) {
         console.error("Get bookings by date error:", error);
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
     }
 };
-exports.getCustomerDetailsByBooking = async (req, res) => {
+exports.getBookingDetailsById = async (req, res) => {
     try {
         const { bookingId } = req.params;
 
-        // 1️⃣ Find the booking
-        const booking = await Booking.findById(bookingId).lean();
+        // 1️⃣ Fetch booking and related data
+        const booking = await Booking.findById(bookingId)
+            .populate("user", "name email mobileNumber role")
+            .populate("acceptedLabour", "name mobileNumber role")
+            .populate({
+                path: "items.unit",
+                select: "title description",
+                model: "Unit",
+            })
+            .lean();
+
         if (!booking) {
-            return res.status(404).json({ success: false, message: "Booking not found" });
+            return res.status(404).json({
+                success: false,
+                message: "Booking not found",
+            });
         }
 
-        const userId = booking.user;
+        // 2️⃣ Fetch Customer profile (address details)
+        const customerProfile = await Customer.findOne({ userId: booking.user?._id }).lean();
 
-        // 2️⃣ Fetch User & Customer profile
+        // 3️⃣ Booking Info section
+        const bookingInfo = {
+            bookingId: booking._id,
+            bookingNo: booking.bookingNo,
+            status: booking.status,
+            paymentMethod: booking.paymentMethod,
+            totalAmount: booking.totalAmount,
+            subtotal: booking.subtotal,
+            tax: booking.tax,
+            tip: booking.tip,
+            bookedAt: new Date(booking.bookedAt).toLocaleString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+            }),
+            payment:
+                booking.paymentMethod === "Razorpay"
+                    ? `₹${booking.totalAmount} - Paid`
+                    : booking.paymentMethod === "COD"
+                        ? "COD"
+                        : "Unpaid",
+            items: booking.items.map((item) => ({
+                unitTitle: item.unit ? item.unit.title : "Deleted Service",
+                quantity: item.quantity,
+                price: item.price,
+            })),
+        };
+
+        // 4️⃣ User Info (Customer)
+        const customer = booking.user || {};
+        const userInfo = {
+            id: customer._id || null,
+            name: customer.name || "Unknown",
+            email: customer.email || "N/A",
+            phone: customer.mobileNumber || "N/A",
+            address: customerProfile
+                ? {
+                    HNo: customerProfile.address?.HNo || "",
+                    street: customerProfile.address?.street || "",
+                    area: customerProfile.address?.area || "",
+                    townCity: customerProfile.address?.townCity || "",
+                    state: customerProfile.address?.state || "",
+                    pincode: customerProfile.address?.pincode || "",
+                }
+                : {},
+        };
+
+        // 5️⃣ Labour Info (from acceptedLabour = User model)
+        const labour = booking.acceptedLabour || {};
+        const labourInfo = {
+            id: labour._id || null,
+            name: labour.name || "Not assigned",
+            phone: labour.mobileNumber || "N/A",
+            assignedDate: booking.bookingDate
+                ? new Date(booking.bookingDate).toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                })
+                : "N/A",
+        };
+
+        // 6️⃣ Final structured response
+        res.status(200).json({
+            success: true,
+            bookingInfo,
+            userInfo,
+            labourInfo,
+        });
+    } catch (error) {
+        console.error("Get booking details error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
+    }
+};
+exports.getCustomerDetailsByUserId = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        // 1️⃣ Validate user
         const user = await User.findById(userId).select("-password").lean();
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        // 2️⃣ Fetch Customer Profile
         const profile = await Customer.findOne({ userId }).lean();
 
-        // 3️⃣ Fetch all bookings and populate unit titles
+        // 3️⃣ Fetch all bookings for this user
         const allBookings = await Booking.find({ user: userId })
             .populate({
                 path: 'items.unit',
-                select: 'title', // fetch only the title field
+                select: 'title', // fetch only title
                 model: 'Unit'
             })
             .lean();
@@ -1030,10 +1152,12 @@ exports.getCustomerDetailsByBooking = async (req, res) => {
         const disputesCount = await Dispute.countDocuments({ user: userId });
         const availabilityStatus = user.isActive ? "Active" : "Inactive";
 
-        // 5️⃣ Booking history with proper unit names
+        // 5️⃣ Booking history
         const bookingHistory = allBookings.map(b => ({
             _id: b._id,
             bookingId: b.bookingId,
+
+            bookingNo: b.bookingNo,
             items: b.items.map(item => ({
                 unit: item.unit ? item.unit.title : "Deleted Service",
                 quantity: item.quantity,
@@ -1045,6 +1169,7 @@ exports.getCustomerDetailsByBooking = async (req, res) => {
             payment: b.paymentMethod === "Razorpay" ? `₹${b.totalAmount}` : b.paymentMethod
         }));
 
+        // ✅ Response
         res.status(200).json({
             success: true,
             customerDetails: {
@@ -1062,11 +1187,10 @@ exports.getCustomerDetailsByBooking = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Get customer details error:", error);
+        console.error("Get customer details by userId error:", error);
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
-
 
 exports.getTop4DemandingServicesByMonth = async (req, res) => {
     try {
@@ -2420,6 +2544,106 @@ exports.getSpecificServiceDetails = async (req, res) => {
     } catch (error) {
         console.error("Error fetching specific service details:", error);
         res.status(500).json({ success: false, message: "Server error", error: error.message });
+    }
+};
+
+exports.getGeneralEnquiries = async (req, res) => {
+    try {
+        const data = await Contact.find({ subject: 'General Enquiry' });
+        res.status(200).json({ count: data.length, data });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching General Enquiry contacts", error: error.message });
+    }
+};
+
+
+exports.getAccountBillingEnquiries = async (req, res) => {
+    try {
+        const data = await Contact.find({ subject: 'Account & billing enquiry' });
+        res.status(200).json({ count: data.length, data });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching Account & Billing Enquiry contacts", error: error.message });
+    }
+};
+
+exports.getFeedbacks = async (req, res) => {
+    try {
+        const data = await Contact.find({ subject: 'Feedback' });
+        res.status(200).json({ count: data.length, data });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching Feedback contacts", error: error.message });
+    }
+};
+
+exports.replyToContact = async (req, res) => {
+    try {
+        const { id } = req.params; // Get ID from params
+        const { adminMessage } = req.body;
+
+        if (!adminMessage) {
+            return res.status(400).json({ message: "Reply message is required." });
+        }
+
+        const contact = await Contact.findById(id);
+        if (!contact) {
+            return res.status(404).json({ message: "Contact not found." });
+        }
+
+        if (!contact.email) {
+            return res.status(400).json({ message: "This contact does not have an email address." });
+        }
+
+        // Generate HTML email
+        const htmlContent = contactReplyMail(adminMessage);
+
+        // Send reply
+        await sendEmail(contact.email, "Reply from Apna Labour Support", htmlContent);
+
+        // Update reply status
+        contact.replied = true;
+        contact.repliedAt = new Date();
+        await contact.save();
+
+        res.status(200).json({ message: "Reply email sent successfully!" });
+    } catch (error) {
+        console.error("❌ Error sending reply:", error);
+        res.status(500).json({ message: "Failed to send reply", error: error.message });
+    }
+};
+exports.markAsRead = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const contact = await Contact.findById(id);
+        if (!contact) {
+            return res.status(404).json({ message: "Contact not found." });
+        }
+
+        // Update read status
+        contact.read = true;
+        await contact.save();
+
+        res.status(200).json({
+            message: "Contact marked as read successfully.",
+            contact
+        });
+    } catch (error) {
+        console.error("❌ Error marking as read:", error);
+        res.status(500).json({ message: "Failed to mark as read", error: error.message });
+    }
+};
+
+exports.getAllRefunds = async (req, res) => {
+    try {
+        const refunds = await Refund.find()
+            .populate("userId", "name email")       // fetch user details
+            .populate("bookingId")                  // fetch booking details
+            .populate("paymentId");                 // fetch payment details
+
+        res.status(200).json({ refunds });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to fetch refunds", error: error.message });
     }
 };
 

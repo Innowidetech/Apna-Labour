@@ -5,7 +5,7 @@ const bookingSchema = new mongoose.Schema(
     {
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
         acceptedLabour: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-        bookingId: {
+        bookingNo: {
             type: String,
             unique: true,
             default: function () {
