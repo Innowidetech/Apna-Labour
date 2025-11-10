@@ -21,6 +21,7 @@ const serviceRejectionMail = require('../utils/serviceRejectionMail');
 const trainingRejectionMail = require('../utils/trainingRejectionMail');
 const contactReplyMail = require("../utils/contactReplyMail");
 const Refund = require('../models/Refund');
+const Skill = require('../models/SkillName');
 const mongoose = require('mongoose');
 
 const {
@@ -822,6 +823,27 @@ exports.createHeroAppliance = async (req, res) => {
     }
 };
 
+exports.addSkill = async (req, res) => {
+    try {
+        const { skillName, ratePerDay } = req.body;
+
+        const skill = await Skill.create({ skillName, ratePerDay });
+
+        res.status(201).json({ message: "Skill added successfully", skill });
+    } catch (error) {
+        res.status(500).json({ message: "Error adding skill", error: error.message });
+    }
+};
+exports.getAllSkills = async (req, res) => {
+    try {
+        const skills = await Skill.find();
+
+        res.status(200).json({ message: "Skills fetched successfully", skills });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching skills", error: error.message });
+    }
+}
+
 exports.createHelpCenter = async (req, res) => {
     try {
         const { heading, accordions } = req.body;
@@ -888,33 +910,23 @@ exports.getAdminDashboard = async (req, res) => {
             });
         }
 
-        // Parse date range for bookings
-        const start = new Date(`${date}T00:00:00.000Z`);
-        const end = new Date(`${date}T23:59:59.999Z`);
+        // 🕒 Date range for bookings (based on bookedAt)
+        const start = new Date(date);
+        start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(date);
+        end.setUTCHours(23, 59, 59, 999);
 
-
-        // 📅 Bookings made on that date
+        // 📅 Bookings for the date
         const bookings = await Booking.find({
-            bookingDate: { $gte: start, $lte: end },
+            bookedAt: { $gte: start, $lte: end },
         });
 
         const totalBookings = bookings.length;
         const totalMoney = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
         const totalCompletedJobs = bookings.filter(b => b.status === "Completed").length;
 
-        // 🔹 Booking trend (per service)
-        const serviceCounts = {};
-        bookings.forEach(b => {
-            b.items?.forEach(item => {
-                const service = item?.serviceName || "Unknown Service";
-                serviceCounts[service] = (serviceCounts[service] || 0) + 1;
-            });
-        });
-
-        const totalProfessionalLabours = await Labourer.countDocuments({
-            registrationType: "Professional",
-            status: "Accepted",
-            isAvailable: true,
+        // ✅ Only Labourers whose trainingStatus = "Completed"
+        const totalLabours = await Labourer.countDocuments({
             trainingStatus: "Completed",
         });
 
@@ -924,14 +936,15 @@ exports.getAdminDashboard = async (req, res) => {
                 summary: {
                     totalBookings,
                     totalMoney,
-                    totalProfessionalLabours, // <- independent of date
+                    totalLabours,
                     totalCompletedJobs,
                 },
             },
         });
+
     } catch (error) {
         console.error("Dashboard Error:", error);
-        res.status(500).json({ success: false, message: "Server error", error });
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
 exports.getBookingsByDate = async (req, res) => {
@@ -2647,3 +2660,36 @@ exports.getAllRefunds = async (req, res) => {
     }
 };
 
+exports.getAllBookings = async (req, res) => {
+    try {
+        const bookings = await Booking.find()
+            .populate("user", "name email")              // Customer name & email
+            .populate("acceptedLabour", "name email")    // Assigned labour details
+            .populate("items.unit", "title price")       // Services (units)
+            .sort({ createdAt: -1 });                    // Latest first
+
+        const formattedBookings = bookings.map((b) => ({
+            bookingNo: b.bookingNo,
+            customerName: b.user?.name || "N/A",
+            assignedLabour: b.acceptedLabour?.name || "Not Assigned",
+            services: b.items.map((i) => i.unit?.title || "Unknown Service"),
+            bookingDate: b.bookingDate ? b.bookingDate.toISOString().split("T")[0] : "N/A",
+            timeSlot: b.timeSlot || "N/A",
+            status: b.status,
+            paymentMethod: b.paymentMethod,
+            totalAmount: b.totalAmount,
+        }));
+
+        res.status(200).json({
+            message: "Booking list fetched successfully",
+            total: formattedBookings.length,
+            bookings: formattedBookings,
+        });
+    } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({
+            message: "Failed to fetch bookings",
+            error: error.message,
+        });
+    }
+};

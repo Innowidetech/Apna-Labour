@@ -28,7 +28,7 @@ const RefundSchema = new mongoose.Schema(
         refund: {
             mode: {
                 type: String,
-                enum: ["bank_transfer", "original_payment_method", "wallet"],
+                enum: ["bank_transfer", "original_payment_method", "wallet",'razorpay'],
                 required: false,
             },
             bankDetails: {
