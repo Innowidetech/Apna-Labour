@@ -22,6 +22,11 @@ const trainingRejectionMail = require('../utils/trainingRejectionMail');
 const contactReplyMail = require("../utils/contactReplyMail");
 const Refund = require('../models/Refund');
 const Skill = require('../models/SkillName');
+const BookingCharge = require('../models/BookingCharge');
+const CommissionRate = require('../models/CommissionRate');
+const CancellationCharge = require('../models/CancellationCharge');
+const Cancellation = require('../models/Cancellation');
+const TeamMember = require('../models/TeamMember');
 const mongoose = require('mongoose');
 
 const {
@@ -124,46 +129,66 @@ exports.completeTraining = async (req, res) => {
             return res.status(403).json({ message: "Access Denied, only admin can complete training" });
         }
 
-        const { id } = req.params; // training details id
+        const { id } = req.params; // labourer ID
         const { score } = req.body; // training score sent in request body
+        const certificateFile = req.files?.certificate?.[0]; // file upload
 
-        if (!score && score !== 0) {
+        if (score === undefined || score === null) {
             return res.status(400).json({ message: "Please provide a training score" });
         }
 
-        // Find training details
-        const training = await TrainingDetails.findById(id).populate('labourerId');
-        if (!training) {
-            return res.status(404).json({ message: "Training not found" });
+        if (!certificateFile) {
+            return res.status(400).json({ message: "Certificate file is required" });
         }
 
-        // Update training status and score
+        // Find the labourer
+        const labourer = await Labourer.findById(id).populate('userId');
+        if (!labourer) {
+            return res.status(404).json({ message: "Labourer not found" });
+        }
+
+        // Find training details for this labourer
+        const training = await TrainingDetails.findOne({ labourerId: labourer._id });
+        if (!training) {
+            return res.status(404).json({ message: "No training assigned to this labourer yet" });
+        }
+
+        // Upload certificate
+        const uploadedCertificate = await uploadMedia(certificateFile);
+        if (!uploadedCertificate || !uploadedCertificate[0]) {
+            return res.status(500).json({ message: "Certificate upload failed" });
+        }
+
+        // Update training details
         training.trainingStatus = 'Completed';
         await training.save();
 
         // Update labourer record
-        const labourer = training.labourerId;
         labourer.trainingStatus = 'Completed';
         labourer.traingScore = score;
-        labourer.isAvailable = true; // available for work
+        labourer.isAvailable = true; // labourer available for work
+        labourer.certificate = uploadedCertificate[0]; // save certificate URL/path
         await labourer.save();
 
-        // Send email to labourer
-        const emailHTML = trainingCompletionMail(score);
-        await sendEmail(
-            labourer.userId.email,
-            "🎉 Training Completed Successfully!",
-            emailHTML
-        );
+        // Send email to labourer (optional)
+        if (labourer.userId?.email) {
+            const emailHTML = trainingCompletionMail(score, uploadedCertificate[0]);
+            await sendEmail(
+                labourer.userId.email,
+                "🎉 Training Completed Successfully!",
+                emailHTML
+            );
+        }
 
         return res.status(200).json({
             success: true,
-            message: `Training marked as completed and score sent to ${labourer.userId.email}`,
+            message: `Training completed, score and certificate sent to ${labourer.userId.email}`,
             training,
+            certificate: uploadedCertificate[0]
         });
 
     } catch (err) {
-        console.error("Error completing training:", err);
+        console.error("❌ Error completing training:", err);
         return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
     }
 };
@@ -1726,7 +1751,23 @@ exports.getTeamLabourers = async (req, res) => {
         });
     }
 };
+exports.getTeamMembers = async (req, res) => {
+    try {
+        const { userId } = req.params;
 
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: 'Invalid userId' });
+        }
+
+        const teamMembers = await TeamMember.find({ userId }).populate('teamLeader', 'name');
+        // optional: populate teamLeader name
+
+        res.status(200).json({ success: true, data: teamMembers });
+    } catch (error) {
+        console.error('Error fetching team members:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
 exports.getProfessionalLabourerDetails = async (req, res) => {
     try {
         const { userId } = req.params; // ✅ Take userId instead of labourerId
@@ -2114,46 +2155,42 @@ exports.getPendingLabourers = async (req, res) => {
 
 exports.filterLabourers = async (req, res) => {
     try {
-        const { registrationType, serviceCity, trainingStatus } = req.query;
+        const { registrationType, serviceCity } = req.query;
 
-        // 1️⃣ Build filters
-        const filter = {};
+        // Filter: status Accepted AND trainingStatus "On Going"
+        const filter = {
+            status: 'Accepted',
+            trainingStatus: 'On Going'
+        };
+
         if (registrationType) filter.registrationType = registrationType;
         if (serviceCity) filter.serviceCity = { $regex: new RegExp(serviceCity, "i") };
-        if (trainingStatus) filter.trainingStatus = trainingStatus;
 
-        // 2️⃣ Fetch filtered labourers
         const labourers = await Labourer.find(filter)
             .populate("userId", "_id name email mobileNumber")
             .populate("category", "title image")
             .sort({ createdAt: -1 });
 
         if (!labourers.length) {
-            return res.status(404).json({
-                success: false,
-                message: "No labourers found matching the given filters",
-            });
+            return res.status(404).json({ success: false, message: "No labourers found" });
         }
 
-        // 3️⃣ Get all userIds for training lookup
+        // Fetch training details for these labourers
         const userIds = labourers.map(l => l.userId?._id);
-
-        // 4️⃣ Fetch training details for all labourers
         const trainingDetails = await TrainingDetails.find({
             labourerId: { $in: userIds },
         });
 
-        // 5️⃣ Create a map for quick lookup
         const trainingMap = {};
         trainingDetails.forEach(td => {
             trainingMap[td.labourerId.toString()] = td;
         });
 
-        // 6️⃣ Format response
         const formattedLabourers = labourers.map(l => {
             const training = trainingMap[l.userId?._id?.toString()] || null;
 
             return {
+                _id: l._id,
                 userId: l.userId?._id || null,
                 name: l.userId?.name || null,
                 email: l.userId?.email || null,
@@ -2161,6 +2198,7 @@ exports.filterLabourers = async (req, res) => {
                 registrationType: l.registrationType,
                 serviceCity: l.serviceCity,
                 trainingStatus: l.trainingStatus,
+                status: l.status,
                 category: l.category ? {
                     title: l.category.title,
                     image: l.category.image
@@ -2178,19 +2216,15 @@ exports.filterLabourers = async (req, res) => {
         res.status(200).json({
             success: true,
             total: formattedLabourers.length,
-            filtersApplied: { registrationType, serviceCity, trainingStatus },
+            filtersApplied: { registrationType, serviceCity, trainingStatus: 'On Going', status: 'Accepted' },
             data: formattedLabourers,
         });
+
     } catch (err) {
-        console.error("❌ Error filtering labourers:", err);
-        res.status(500).json({
-            success: false,
-            message: "Internal server error",
-            error: err.message,
-        });
+        console.error("Error filtering labourers:", err);
+        res.status(500).json({ success: false, message: "Internal server error", error: err.message });
     }
 };
-
 exports.getPendingLabourRequests = async (req, res) => {
     try {
         const { registrationType, serviceCity } = req.query;
@@ -2691,5 +2725,126 @@ exports.getAllBookings = async (req, res) => {
             message: "Failed to fetch bookings",
             error: error.message,
         });
+    }
+};
+exports.addBookingCharge = async (req, res) => {
+    try {
+        const { bookingAmount, effectiveFrom } = req.body;
+
+        if (!bookingAmount || !effectiveFrom) {
+            return res.status(400).json({ success: false, message: "All fields are required" });
+        }
+
+        const newCharge = await BookingCharge.create({
+            bookingAmount,
+            effectiveFrom,
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Booking charge added successfully",
+            data: newCharge,
+        });
+    } catch (error) {
+        console.error("Error adding booking charge:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+// 📋 Get all booking charges (public)
+exports.getAllBookingCharges = async (req, res) => {
+    try {
+        const charges = await BookingCharge.find().sort({ createdAt: -1 });
+        res.status(200).json({
+            success: true,
+            data: charges,
+        });
+    } catch (error) {
+        console.error("Error fetching booking charges:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+exports.addCancellationCharge = async (req, res) => {
+    try {
+        const { amount } = req.body;
+
+        if (!req.user || req.user.role !== "Admin") {
+            return res.status(403).json({ success: false, message: "Access denied: Admins only" });
+        }
+
+        if (!amount) {
+            return res.status(400).json({ success: false, message: "Amount is required" });
+        }
+
+        //  Always keep only one active cancellation charge (latest)
+        let charge = await CancellationCharge.findOne();
+
+        if (charge) {
+            charge.amount = amount;
+            await charge.save();
+        } else {
+            charge = await CancellationCharge.create({ amount });
+        }
+
+        res.status(201).json({
+            success: true,
+            message: "Cancellation charge saved successfully",
+            data: charge,
+        });
+    } catch (error) {
+        console.error("Error adding cancellation charge:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+//  Get latest cancellation charge
+exports.getCancellationCharge = async (req, res) => {
+    try {
+        const charge = await CancellationCharge.findOne().sort({ createdAt: -1 });
+        res.status(200).json({
+            success: true,
+            data: charge,
+        });
+    } catch (error) {
+        console.error("Error fetching cancellation charge:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+exports.addCommissionRate = async (req, res) => {
+    try {
+        const { previousRate, effectiveFrom } = req.body;
+
+        // Validate input
+        if (!previousRate || !effectiveFrom) {
+            return res.status(400).json({ success: false, message: "All fields are required" });
+        }
+
+        // Create new commission rate
+        const newRate = await CommissionRate.create({
+            previousRate,
+            effectiveFrom,
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Commission rate added successfully",
+            data: newRate,
+        });
+    } catch (error) {
+        console.error("Error adding commission rate:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+// Get all commission rates (optional, for admin or dashboard)
+exports.getAllCommissionRates = async (req, res) => {
+    try {
+        const rates = await CommissionRate.find().sort({ effectiveFrom: -1 });
+        res.status(200).json({ success: true, data: rates });
+    } catch (error) {
+        console.error("Error fetching commission rates:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
     }
 };

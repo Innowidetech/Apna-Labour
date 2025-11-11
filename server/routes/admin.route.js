@@ -10,7 +10,8 @@ const { getAllUsers, approveLabourerTraining, completeTraining,
     getIndividualTeamLabourerDetails, getSuspendedAccounts, suspendLabour, rejectTraining, filterLabourers, getPendingLabourers,
     getPendingLabourRequests, getCounts, getAllSpecificServices, getSpecificServiceDetails, getGeneralEnquiries,
     getAccountBillingEnquiries, getFeedbacks, replyToContact, markAsRead, getAllRefunds, getBookingDetailsById, addSkill,
-    getAllSkills, getAllBookings
+    getAllSkills, getAllBookings, addBookingCharge, getAllBookingCharges, addCancellationCharge, getCancellationCharge,
+    addCommissionRate, getAllCommissionRates, getTeamMembers
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -58,13 +59,15 @@ router.get("/labourer/individual-team/:userId", protect, authorize("Admin"), get
 router.get("/suspended-accounts", protect, authorize("Admin"), getSuspendedAccounts);
 router.put("/toggle-suspend/:userId", protect, authorize("Admin"), suspendLabour);
 
-router.get("/professional", getProfessionalLabourers);
-router.get("/individual", getIndividualLabourers);
+router.get("/professional", getProfessionalLabourers);// categoryId=68da0cf29c8011d8aab48451
+router.get("/individual", getIndividualLabourers);// skill=69122218bdd132b0e8695060
 router.get("/team", getTeamLabourers);
+router.get('/team-members/:userId', protect, authorize('Admin'), getTeamMembers);
+
 
 // Training Management
-router.post('/approve-registration/:id', protect, authorize('Admin'), approveLabourerTraining);
-router.patch('/training-completed/:id', protect, authorize('Admin'), completeTraining);
+router.post('/approve-registration/:id', protect, upload.fields([{ name: 'image', maxCount: 1 }]), authorize('Admin'), approveLabourerTraining);
+router.patch('/training-completed/:id', protect, authorize('Admin'), upload.fields([{ name: 'certificate', maxCount: 1 }]), completeTraining);
 router.patch('/reject-training/:id', protect, authorize('Admin'), rejectTraining);
 router.get('/labourers', protect, authorize('Admin'), getAllLabourers);
 router.get('/labourers/accepted', protect, authorize('Admin'), getAcceptedLabourers);
@@ -82,10 +85,17 @@ router.post("/add/skill", protect, authorize("Admin"), addSkill);
 router.get("/all/skills", protect, authorize("Admin"), getAllSkills)
 
 // bookings and payments
-router.get("/bookings/list", protect, authorize("Admin"), getAllBookings);
+router.get("/bookings/list", getAllBookings);
 
 
 // Reports and Analytics
+router.post("/add/booking/charge", protect, authorize("Admin"), addBookingCharge);
+router.get("/all/booking/charges", getAllBookingCharges);
+router.post("/add/cancellation/charge", protect, authorize("Admin"), addCancellationCharge);
+router.get("/current/cancellation/charge", getCancellationCharge);
+router.post("/add/commission/rate", protect, authorize("Admin"), addCommissionRate);
+router.get("/all/commission/rates", getAllCommissionRates);
+
 // Refund Management
 router.get("/refund", protect, authorize("Admin"), getAllRefunds);
 // Queries

@@ -31,6 +31,10 @@ const LabourerSchema = new mongoose.Schema({
         ref: 'Category'
     }],
 
+    certificate: {
+        type: String
+    },
+
     // Only for Individual or Team
     skill: {
         type: String,
