@@ -471,7 +471,10 @@ const Checkout = () => {
 
   const user = profile || {};
   const address = profile?.address || {};
-  const booking = profileData?.booking || {};
+ const booking = location.state?.profileData?.booking
+             || location.state?.booking
+             || {};
+
 
   const tax = booking?.tax ?? 0;
   const tip = booking?.tip ?? 0;
@@ -662,17 +665,24 @@ const Checkout = () => {
             </div>
           </div>
 
-          {/* Slot */}
-          <div className="flex justify-between items-start px-5 py-3">
-            <p className="text-sm text-gray-500 w-1/4">Slot</p>
-            <div className="flex-1 flex justify-between">
-              <div className="text-gray-800 text-sm font-medium leading-tight space-y-0.5">
-                <p>{booking?.date || "Thu, Jun 12"}</p>
-                <p>{booking?.time || "12:00 PM"}</p>
-              </div>
-              <Edit2 className="w-4 h-4 text-gray-400 cursor-pointer" />
-            </div>
-          </div>
+         {/* Slot */}
+<div className="flex justify-between items-start px-5 py-3">
+  <p className="text-sm text-gray-500 w-1/4">Slot</p>
+  <div className="flex-1 flex justify-between">
+    <div className="text-gray-800 text-sm font-medium leading-tight space-y-0.5">
+     <p>
+  {booking?.bookingDate
+    ? new Date(booking.bookingDate).toDateString()
+    : "No date selected"}
+</p>
+
+<p>{booking?.timeSlot || "No time selected"}</p>
+
+    </div>
+    <Edit2 className="w-4 h-4 text-gray-400 cursor-pointer" />
+  </div>
+</div>
+
         </div>
       </div>
 
