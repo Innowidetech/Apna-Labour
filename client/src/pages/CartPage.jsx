@@ -127,6 +127,7 @@ const CartPage = () => {
       toast.error("Please enter your mobile number");
       return;
     }
+    
     try {
       const res = await fetch("https://apnalabour.onrender.com/api/auth/login", {
         method: "POST",
