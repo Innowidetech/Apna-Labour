@@ -7,7 +7,11 @@ const TeamMemberSchema = new mongoose.Schema(
       ref: 'Labourer', // Linked to the Labourer (Team Leader)
       required: true
     },
-
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User', // Optional: link to User
+      required: false
+    },
     name: {
       type: String,
       required: true,

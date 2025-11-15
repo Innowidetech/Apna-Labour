@@ -19,6 +19,14 @@ const { sendEmail } = require('../utils/nodemailer');
 const trainingCompletionMail = require('../utils/trainingCompletionMail');
 const serviceRejectionMail = require('../utils/serviceRejectionMail');
 const trainingRejectionMail = require('../utils/trainingRejectionMail');
+const contactReplyMail = require("../utils/contactReplyMail");
+const Refund = require('../models/Refund');
+const Skill = require('../models/SkillName');
+const BookingCharge = require('../models/BookingCharge');
+const CommissionRate = require('../models/CommissionRate');
+const CancellationCharge = require('../models/CancellationCharge');
+const Cancellation = require('../models/Cancellation');
+const TeamMember = require('../models/TeamMember');
 const mongoose = require('mongoose');
 
 const {
@@ -121,46 +129,66 @@ exports.completeTraining = async (req, res) => {
             return res.status(403).json({ message: "Access Denied, only admin can complete training" });
         }
 
-        const { id } = req.params; // training details id
+        const { id } = req.params; // labourer ID
         const { score } = req.body; // training score sent in request body
+        const certificateFile = req.files?.certificate?.[0]; // file upload
 
-        if (!score && score !== 0) {
+        if (score === undefined || score === null) {
             return res.status(400).json({ message: "Please provide a training score" });
         }
 
-        // Find training details
-        const training = await TrainingDetails.findById(id).populate('labourerId');
-        if (!training) {
-            return res.status(404).json({ message: "Training not found" });
+        if (!certificateFile) {
+            return res.status(400).json({ message: "Certificate file is required" });
         }
 
-        // Update training status and score
+        // Find the labourer
+        const labourer = await Labourer.findById(id).populate('userId');
+        if (!labourer) {
+            return res.status(404).json({ message: "Labourer not found" });
+        }
+
+        // Find training details for this labourer
+        const training = await TrainingDetails.findOne({ labourerId: labourer._id });
+        if (!training) {
+            return res.status(404).json({ message: "No training assigned to this labourer yet" });
+        }
+
+        // Upload certificate
+        const uploadedCertificate = await uploadMedia(certificateFile);
+        if (!uploadedCertificate || !uploadedCertificate[0]) {
+            return res.status(500).json({ message: "Certificate upload failed" });
+        }
+
+        // Update training details
         training.trainingStatus = 'Completed';
         await training.save();
 
         // Update labourer record
-        const labourer = training.labourerId;
         labourer.trainingStatus = 'Completed';
         labourer.traingScore = score;
-        labourer.isAvailable = true; // available for work
+        labourer.isAvailable = true; // labourer available for work
+        labourer.certificate = uploadedCertificate[0]; // save certificate URL/path
         await labourer.save();
 
-        // Send email to labourer
-        const emailHTML = trainingCompletionMail(score);
-        await sendEmail(
-            labourer.userId.email,
-            "🎉 Training Completed Successfully!",
-            emailHTML
-        );
+        // Send email to labourer (optional)
+        if (labourer.userId?.email) {
+            const emailHTML = trainingCompletionMail(score, uploadedCertificate[0]);
+            await sendEmail(
+                labourer.userId.email,
+                "🎉 Training Completed Successfully!",
+                emailHTML
+            );
+        }
 
         return res.status(200).json({
             success: true,
-            message: `Training marked as completed and score sent to ${labourer.userId.email}`,
+            message: `Training completed, score and certificate sent to ${labourer.userId.email}`,
             training,
+            certificate: uploadedCertificate[0]
         });
 
     } catch (err) {
-        console.error("Error completing training:", err);
+        console.error("❌ Error completing training:", err);
         return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
     }
 };
@@ -759,8 +787,6 @@ exports.createNotificationForUser = async (req, res) => {
     }
 };
 
-
-
 exports.getContacts = async (req, res) => {
     try {
         const contacts = await Contact.find().sort({ createdAt: -1 });
@@ -781,13 +807,13 @@ exports.createHeroAppliance = async (req, res) => {
                 .json({ message: "Title, image, and appliance are required" });
         }
 
-        // ✅ Check if appliance exists
+        //  Check if appliance exists
         const appliance = await AppliancesType.findById(applianceId);
         if (!appliance) {
             return res.status(404).json({ message: "Appliance not found" });
         }
 
-        // ✅ Check if hero section already exists for this appliance
+        //  Check if hero section already exists for this appliance
         const existingHero = await HeroAppliance.findOne({ appliance: applianceId });
         if (existingHero) {
             return res
@@ -795,13 +821,13 @@ exports.createHeroAppliance = async (req, res) => {
                 .json({ message: "Hero section for this appliance already exists" });
         }
 
-        // ✅ Upload image
+        //  Upload image
         const uploadImage = await uploadMedia(imgFile);
         if (!uploadImage || !uploadImage[0]) {
             return res.status(500).json({ message: "Image upload failed" });
         }
 
-        // ✅ Save new hero appliance
+        //  Save new hero appliance
         const heroAppliance = new HeroAppliance({
             title,
             image: uploadImage[0],
@@ -821,6 +847,27 @@ exports.createHeroAppliance = async (req, res) => {
         });
     }
 };
+
+exports.addSkill = async (req, res) => {
+    try {
+        const { skillName, ratePerDay } = req.body;
+
+        const skill = await Skill.create({ skillName, ratePerDay });
+
+        res.status(201).json({ message: "Skill added successfully", skill });
+    } catch (error) {
+        res.status(500).json({ message: "Error adding skill", error: error.message });
+    }
+};
+exports.getAllSkills = async (req, res) => {
+    try {
+        const skills = await Skill.find();
+
+        res.status(200).json({ message: "Skills fetched successfully", skills });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching skills", error: error.message });
+    }
+}
 
 exports.createHelpCenter = async (req, res) => {
     try {
@@ -852,7 +899,6 @@ exports.createHelpCenter = async (req, res) => {
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
-
 exports.getAdminProfile = async (req, res) => {
     try {
         const adminId = req.user?.userId; // from auth middleware
@@ -889,33 +935,23 @@ exports.getAdminDashboard = async (req, res) => {
             });
         }
 
-        // Parse date range for bookings
-        const start = new Date(`${date}T00:00:00.000Z`);
-        const end = new Date(`${date}T23:59:59.999Z`);
+        // 🕒 Date range for bookings (based on bookedAt)
+        const start = new Date(date);
+        start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(date);
+        end.setUTCHours(23, 59, 59, 999);
 
-
-        // 📅 Bookings made on that date
+        // 📅 Bookings for the date
         const bookings = await Booking.find({
-            bookingDate: { $gte: start, $lte: end },
+            bookedAt: { $gte: start, $lte: end },
         });
 
         const totalBookings = bookings.length;
         const totalMoney = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
         const totalCompletedJobs = bookings.filter(b => b.status === "Completed").length;
 
-        // 🔹 Booking trend (per service)
-        const serviceCounts = {};
-        bookings.forEach(b => {
-            b.items?.forEach(item => {
-                const service = item?.serviceName || "Unknown Service";
-                serviceCounts[service] = (serviceCounts[service] || 0) + 1;
-            });
-        });
-
-        const totalProfessionalLabours = await Labourer.countDocuments({
-            registrationType: "Professional",
-            status: "Accepted",
-            isAvailable: true,
+        // ✅ Only Labourers whose trainingStatus = "Completed"
+        const totalLabours = await Labourer.countDocuments({
             trainingStatus: "Completed",
         });
 
@@ -925,46 +961,51 @@ exports.getAdminDashboard = async (req, res) => {
                 summary: {
                     totalBookings,
                     totalMoney,
-                    totalProfessionalLabours, // <- independent of date
+                    totalLabours,
                     totalCompletedJobs,
                 },
             },
         });
+
     } catch (error) {
         console.error("Dashboard Error:", error);
-        res.status(500).json({ success: false, message: "Server error", error });
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
 exports.getBookingsByDate = async (req, res) => {
     try {
         const { date } = req.query;
-        if (!date) return res.status(400).json({ success: false, message: "Date is required" });
+        if (!date) {
+            return res.status(400).json({
+                success: false,
+                message: "Date is required",
+            });
+        }
 
-        // Start & end of the day
+        // 1️⃣ Define UTC date range for filtering
         const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
+        startOfDay.setUTCHours(0, 0, 0, 0);
 
         const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
+        endOfDay.setUTCHours(23, 59, 59, 999);
 
-        // Fetch bookings
+        // 2️⃣ Fetch bookings within the date range
         const bookings = await Booking.find({
-            bookingDate: { $gte: startOfDay, $lte: endOfDay },
+            bookedAt: { $gte: startOfDay, $lte: endOfDay },
         })
-            .populate("user", "name")                 // Customer name
-            .populate("items.unit", "title")          // Fetch service title from Unit
+            .populate("user", "name email phone") // Customer info
+            .populate("acceptedLabour", "name phone labourType") // Labour info from same User model
             .lean();
 
+        // 3️⃣ Format response
         const formatted = bookings.map((b) => {
             const customerName = b.user?.name || "Unknown";
+            const customerPhone = b.user?.phone || "N/A";
 
-            // Extract all service titles in this booking
-            const services = b.items?.map(item => item.unit?.title || "Service").join(", ") || "Service";
+            const labourName = b.acceptedLabour?.name || "Not assigned";
+            const labourPhone = b.acceptedLabour?.phone || "N/A";
+            const labourType = b.acceptedLabour?.labourType || "N/A";
 
-            // Labourer info
-            const labourer = b.labourerName || (b.status === "Pending" ? "Not assigned" : "—");
-
-            // Payment info
             const paymentStatus =
                 b.paymentMethod === "Razorpay"
                     ? `₹${b.totalAmount} - Paid`
@@ -973,11 +1014,18 @@ exports.getBookingsByDate = async (req, res) => {
                         : "Unpaid";
 
             return {
-                _id: b._id,
-                bookingId: b.bookingId,
+                bookingId: b._id,
+                bookingNo: b.bookingNo,
                 customer: customerName,
-                service: services,      // Correct service titles
-                time: new Date(b.bookingDate).toLocaleString("en-IN", {
+                customerPhone,
+                acceptedLabourId: b.acceptedLabour?._id || null, // ✅ Shows user ID of accepted labour
+                acceptedLabour: labourName, // ✅ Shows labour name
+                labourType,
+                paymentMethod: b.paymentMethod,
+                labourPhone,
+                status: b.status,
+                payment: paymentStatus,
+                bookedAt: new Date(b.bookedAt).toLocaleString("en-IN", {
                     day: "2-digit",
                     month: "short",
                     year: "numeric",
@@ -985,39 +1033,148 @@ exports.getBookingsByDate = async (req, res) => {
                     minute: "2-digit",
                     hour12: true,
                 }),
-                labour: labourer,
-                status: b.status,
-                payment: paymentStatus,
+                totalAmount: b.totalAmount,
             };
         });
 
-        res.status(200).json({ success: true, data: formatted });
+        // 4️⃣ Send formatted response
+        res.status(200).json({
+            success: true,
+            data: formatted,
+        });
     } catch (error) {
         console.error("Get bookings by date error:", error);
-        res.status(500).json({ success: false, message: "Server error", error: error.message });
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
     }
 };
-exports.getCustomerDetailsByBooking = async (req, res) => {
+exports.getBookingDetailsById = async (req, res) => {
     try {
         const { bookingId } = req.params;
 
-        // 1️⃣ Find the booking
-        const booking = await Booking.findById(bookingId).lean();
+        // 1️⃣ Fetch booking and related data
+        const booking = await Booking.findById(bookingId)
+            .populate("user", "name email mobileNumber role")
+            .populate("acceptedLabour", "name mobileNumber role")
+            .populate({
+                path: "items.unit",
+                select: "title description",
+                model: "Unit",
+            })
+            .lean();
+
         if (!booking) {
-            return res.status(404).json({ success: false, message: "Booking not found" });
+            return res.status(404).json({
+                success: false,
+                message: "Booking not found",
+            });
         }
 
-        const userId = booking.user;
+        // 2️⃣ Fetch Customer profile (address details)
+        const customerProfile = await Customer.findOne({ userId: booking.user?._id }).lean();
 
-        // 2️⃣ Fetch User & Customer profile
+        // 3️⃣ Booking Info section
+        const bookingInfo = {
+            bookingId: booking._id,
+            bookingNo: booking.bookingNo,
+            status: booking.status,
+            paymentMethod: booking.paymentMethod,
+            totalAmount: booking.totalAmount,
+            subtotal: booking.subtotal,
+            tax: booking.tax,
+            tip: booking.tip,
+            bookedAt: new Date(booking.bookedAt).toLocaleString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+            }),
+            payment:
+                booking.paymentMethod === "Razorpay"
+                    ? `₹${booking.totalAmount} - Paid`
+                    : booking.paymentMethod === "COD"
+                        ? "COD"
+                        : "Unpaid",
+            items: booking.items.map((item) => ({
+                unitTitle: item.unit ? item.unit.title : "Deleted Service",
+                quantity: item.quantity,
+                price: item.price,
+            })),
+        };
+
+        // 4️⃣ User Info (Customer)
+        const customer = booking.user || {};
+        const userInfo = {
+            id: customer._id || null,
+            name: customer.name || "Unknown",
+            email: customer.email || "N/A",
+            phone: customer.mobileNumber || "N/A",
+            address: customerProfile
+                ? {
+                    HNo: customerProfile.address?.HNo || "",
+                    street: customerProfile.address?.street || "",
+                    area: customerProfile.address?.area || "",
+                    townCity: customerProfile.address?.townCity || "",
+                    state: customerProfile.address?.state || "",
+                    pincode: customerProfile.address?.pincode || "",
+                }
+                : {},
+        };
+
+        // 5️⃣ Labour Info (from acceptedLabour = User model)
+        const labour = booking.acceptedLabour || {};
+        const labourInfo = {
+            id: labour._id || null,
+            name: labour.name || "Not assigned",
+            phone: labour.mobileNumber || "N/A",
+            assignedDate: booking.bookingDate
+                ? new Date(booking.bookingDate).toLocaleDateString("en-IN", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                })
+                : "N/A",
+        };
+
+        // 6️⃣ Final structured response
+        res.status(200).json({
+            success: true,
+            bookingInfo,
+            userInfo,
+            labourInfo,
+        });
+    } catch (error) {
+        console.error("Get booking details error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message,
+        });
+    }
+};
+exports.getCustomerDetailsByUserId = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        // 1️⃣ Validate user
         const user = await User.findById(userId).select("-password").lean();
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        // 2️⃣ Fetch Customer Profile
         const profile = await Customer.findOne({ userId }).lean();
 
-        // 3️⃣ Fetch all bookings and populate unit titles
+        // 3️⃣ Fetch all bookings for this user
         const allBookings = await Booking.find({ user: userId })
             .populate({
                 path: 'items.unit',
-                select: 'title', // fetch only the title field
+                select: 'title', // fetch only title
                 model: 'Unit'
             })
             .lean();
@@ -1033,10 +1190,12 @@ exports.getCustomerDetailsByBooking = async (req, res) => {
         const disputesCount = await Dispute.countDocuments({ user: userId });
         const availabilityStatus = user.isActive ? "Active" : "Inactive";
 
-        // 5️⃣ Booking history with proper unit names
+        // 5️⃣ Booking history
         const bookingHistory = allBookings.map(b => ({
             _id: b._id,
             bookingId: b.bookingId,
+
+            bookingNo: b.bookingNo,
             items: b.items.map(item => ({
                 unit: item.unit ? item.unit.title : "Deleted Service",
                 quantity: item.quantity,
@@ -1048,6 +1207,7 @@ exports.getCustomerDetailsByBooking = async (req, res) => {
             payment: b.paymentMethod === "Razorpay" ? `₹${b.totalAmount}` : b.paymentMethod
         }));
 
+        // ✅ Response
         res.status(200).json({
             success: true,
             customerDetails: {
@@ -1065,11 +1225,10 @@ exports.getCustomerDetailsByBooking = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Get customer details error:", error);
+        console.error("Get customer details by userId error:", error);
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
-
 
 exports.getTop4DemandingServicesByMonth = async (req, res) => {
     try {
@@ -1592,7 +1751,23 @@ exports.getTeamLabourers = async (req, res) => {
         });
     }
 };
+exports.getTeamMembers = async (req, res) => {
+    try {
+        const { userId } = req.params;
 
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: 'Invalid userId' });
+        }
+
+        const teamMembers = await TeamMember.find({ userId }).populate('teamLeader', 'name');
+        // optional: populate teamLeader name
+
+        res.status(200).json({ success: true, data: teamMembers });
+    } catch (error) {
+        console.error('Error fetching team members:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
 exports.getProfessionalLabourerDetails = async (req, res) => {
     try {
         const { userId } = req.params; // ✅ Take userId instead of labourerId
@@ -1980,46 +2155,42 @@ exports.getPendingLabourers = async (req, res) => {
 
 exports.filterLabourers = async (req, res) => {
     try {
-        const { registrationType, serviceCity, trainingStatus } = req.query;
+        const { registrationType, serviceCity } = req.query;
 
-        // 1️⃣ Build filters
-        const filter = {};
+        // Filter: status Accepted AND trainingStatus "On Going"
+        const filter = {
+            status: 'Accepted',
+            trainingStatus: 'On Going'
+        };
+
         if (registrationType) filter.registrationType = registrationType;
         if (serviceCity) filter.serviceCity = { $regex: new RegExp(serviceCity, "i") };
-        if (trainingStatus) filter.trainingStatus = trainingStatus;
 
-        // 2️⃣ Fetch filtered labourers
         const labourers = await Labourer.find(filter)
             .populate("userId", "_id name email mobileNumber")
             .populate("category", "title image")
             .sort({ createdAt: -1 });
 
         if (!labourers.length) {
-            return res.status(404).json({
-                success: false,
-                message: "No labourers found matching the given filters",
-            });
+            return res.status(404).json({ success: false, message: "No labourers found" });
         }
 
-        // 3️⃣ Get all userIds for training lookup
+        // Fetch training details for these labourers
         const userIds = labourers.map(l => l.userId?._id);
-
-        // 4️⃣ Fetch training details for all labourers
         const trainingDetails = await TrainingDetails.find({
             labourerId: { $in: userIds },
         });
 
-        // 5️⃣ Create a map for quick lookup
         const trainingMap = {};
         trainingDetails.forEach(td => {
             trainingMap[td.labourerId.toString()] = td;
         });
 
-        // 6️⃣ Format response
         const formattedLabourers = labourers.map(l => {
             const training = trainingMap[l.userId?._id?.toString()] || null;
 
             return {
+                _id: l._id,
                 userId: l.userId?._id || null,
                 name: l.userId?.name || null,
                 email: l.userId?.email || null,
@@ -2027,6 +2198,7 @@ exports.filterLabourers = async (req, res) => {
                 registrationType: l.registrationType,
                 serviceCity: l.serviceCity,
                 trainingStatus: l.trainingStatus,
+                status: l.status,
                 category: l.category ? {
                     title: l.category.title,
                     image: l.category.image
@@ -2044,19 +2216,15 @@ exports.filterLabourers = async (req, res) => {
         res.status(200).json({
             success: true,
             total: formattedLabourers.length,
-            filtersApplied: { registrationType, serviceCity, trainingStatus },
+            filtersApplied: { registrationType, serviceCity, trainingStatus: 'On Going', status: 'Accepted' },
             data: formattedLabourers,
         });
+
     } catch (err) {
-        console.error("❌ Error filtering labourers:", err);
-        res.status(500).json({
-            success: false,
-            message: "Internal server error",
-            error: err.message,
-        });
+        console.error("Error filtering labourers:", err);
+        res.status(500).json({ success: false, message: "Internal server error", error: err.message });
     }
 };
-
 exports.getPendingLabourRequests = async (req, res) => {
     try {
         const { registrationType, serviceCity } = req.query;
@@ -2158,8 +2326,6 @@ exports.getCounts = async (req, res) => {
         });
     }
 };
-
-
 exports.getAllSpecificServices = async (req, res) => {
     try {
         // 🔹 Extract filters & pagination from query params
@@ -2361,68 +2527,324 @@ exports.getAllSpecificServices = async (req, res) => {
 };
 
 exports.getSpecificServiceDetails = async (req, res) => {
-  try {
-    const { specificServiceId } = req.params;
+    try {
+        const { specificServiceId } = req.params;
 
-    // 1️⃣ Find the specific service and populate the entire chain
-    const specificService = await SpecificService.findById(specificServiceId)
-      .populate({
-        path: "serviceType",
-        populate: {
-          path: "appliances",
-          populate: {
-            path: "subCategory",
-            populate: { path: "category" }
-          }
+        // Find the specific service and populate the full hierarchy
+        const specificService = await SpecificService.findById(specificServiceId)
+            .populate({
+                path: "serviceType",
+                populate: {
+                    path: "appliances",
+                    populate: {
+                        path: "subCategory",
+                        populate: { path: "category" }
+                    }
+                }
+            })
+            .lean();
+
+        if (!specificService) {
+            return res.status(404).json({ success: false, message: "Specific service not found" });
         }
-      })
-      .lean();
 
-    if (!specificService) {
-      return res.status(404).json({ success: false, message: "Specific service not found" });
+        // Get all related units
+        const units = await Unit.find({ specificService: specificServiceId })
+            .select("_id title price discountedPercentage image totalReviews averageRating")
+            .lean();
+
+        // Calculate total reviews across all units
+        const totalReviews = units.reduce((sum, unit) => sum + (unit.totalReviews || 0), 0);
+
+        // Build the structured response
+        const response = {
+            _id: specificService._id,
+            title: specificService.title,
+            image: specificService.image,
+            startingPrice: specificService.startingPrice,
+            serviceType: {
+                _id: specificService.serviceType._id,
+                title: specificService.serviceType.title,
+            },
+            appliance: {
+                _id: specificService.serviceType.appliances._id,
+                title: specificService.serviceType.appliances.title,
+            },
+            subCategory: {
+                _id: specificService.serviceType.appliances.subCategory._id,
+                title: specificService.serviceType.appliances.subCategory.title,
+            },
+            category: {
+                _id: specificService.serviceType.appliances.subCategory.category._id,
+                title: specificService.serviceType.appliances.subCategory.category.title,
+            },
+            totalReviews // total reviews for this specific service
+        };
+
+        // Final response
+        return res.status(200).json({
+            success: true,
+            specificService: response,
+            units,
+        });
+
+    } catch (error) {
+        console.error("Error fetching specific service details:", error);
+        res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
+};
 
-    // 2️⃣ Find all related Units for that specific service
-    const units = await Unit.find({ specificService: specificServiceId })
-      .select("_id title price discountedPercentage image totalReviews averageRating")
-      .lean();
+exports.getGeneralEnquiries = async (req, res) => {
+    try {
+        const data = await Contact.find({ subject: 'General Enquiry' });
+        res.status(200).json({ count: data.length, data });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching General Enquiry contacts", error: error.message });
+    }
+};
 
-    // 3️⃣ Build the structured response
-    const response = {
-      _id: specificService._id,
-      title: specificService.title,
-      image: specificService.image,
-      startingPrice: specificService.startingPrice,
-      serviceType: {
-        _id: specificService.serviceType._id,
-        title: specificService.serviceType.title,
-        image: specificService.serviceType.image,
-      },
-      appliance: {
-        _id: specificService.serviceType.appliances._id,
-        title: specificService.serviceType.appliances.title,
-        image: specificService.serviceType.appliances.image,
-      },
-      subCategory: {
-        _id: specificService.serviceType.appliances.subCategory._id,
-        title: specificService.serviceType.appliances.subCategory.title,
-        image: specificService.serviceType.appliances.subCategory.image,
-      },
-      category: {
-        _id: specificService.serviceType.appliances.subCategory.category._id,
-        title: specificService.serviceType.appliances.subCategory.category.title,
-        image: specificService.serviceType.appliances.subCategory.category.image,
-      }
-    };
 
-    // 4️⃣ Send final response
-    return res.status(200).json({
-      success: true,
-      specificService: response,
-      units,
-    });
-  } catch (error) {
-    console.error("Error fetching specific service details:", error);
-    res.status(500).json({ success: false, message: "Server error", error: error.message });
-  }
+exports.getAccountBillingEnquiries = async (req, res) => {
+    try {
+        const data = await Contact.find({ subject: 'Account & billing enquiry' });
+        res.status(200).json({ count: data.length, data });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching Account & Billing Enquiry contacts", error: error.message });
+    }
+};
+
+exports.getFeedbacks = async (req, res) => {
+    try {
+        const data = await Contact.find({ subject: 'Feedback' });
+        res.status(200).json({ count: data.length, data });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching Feedback contacts", error: error.message });
+    }
+};
+
+exports.replyToContact = async (req, res) => {
+    try {
+        const { id } = req.params; // Get ID from params
+        const { adminMessage } = req.body;
+
+        if (!adminMessage) {
+            return res.status(400).json({ message: "Reply message is required." });
+        }
+
+        const contact = await Contact.findById(id);
+        if (!contact) {
+            return res.status(404).json({ message: "Contact not found." });
+        }
+
+        if (!contact.email) {
+            return res.status(400).json({ message: "This contact does not have an email address." });
+        }
+
+        // Generate HTML email
+        const htmlContent = contactReplyMail(adminMessage);
+
+        // Send reply
+        await sendEmail(contact.email, "Reply from Apna Labour Support", htmlContent);
+
+        // Update reply status
+        contact.replied = true;
+        contact.repliedAt = new Date();
+        await contact.save();
+
+        res.status(200).json({ message: "Reply email sent successfully!" });
+    } catch (error) {
+        console.error("❌ Error sending reply:", error);
+        res.status(500).json({ message: "Failed to send reply", error: error.message });
+    }
+};
+exports.markAsRead = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const contact = await Contact.findById(id);
+        if (!contact) {
+            return res.status(404).json({ message: "Contact not found." });
+        }
+
+        // Update read status
+        contact.read = true;
+        await contact.save();
+
+        res.status(200).json({
+            message: "Contact marked as read successfully.",
+            contact
+        });
+    } catch (error) {
+        console.error("❌ Error marking as read:", error);
+        res.status(500).json({ message: "Failed to mark as read", error: error.message });
+    }
+};
+
+exports.getAllRefunds = async (req, res) => {
+    try {
+        const refunds = await Refund.find()
+            .populate("userId", "name email")       // fetch user details
+            .populate("bookingId")                  // fetch booking details
+            .populate("paymentId");                 // fetch payment details
+
+        res.status(200).json({ refunds });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to fetch refunds", error: error.message });
+    }
+};
+
+exports.getAllBookings = async (req, res) => {
+    try {
+        const bookings = await Booking.find()
+            .populate("user", "name email")              // Customer name & email
+            .populate("acceptedLabour", "name email")    // Assigned labour details
+            .populate("items.unit", "title price")       // Services (units)
+            .sort({ createdAt: -1 });                    // Latest first
+
+        const formattedBookings = bookings.map((b) => ({
+            bookingNo: b.bookingNo,
+            customerName: b.user?.name || "N/A",
+            assignedLabour: b.acceptedLabour?.name || "Not Assigned",
+            services: b.items.map((i) => i.unit?.title || "Unknown Service"),
+            bookingDate: b.bookingDate ? b.bookingDate.toISOString().split("T")[0] : "N/A",
+            timeSlot: b.timeSlot || "N/A",
+            status: b.status,
+            paymentMethod: b.paymentMethod,
+            totalAmount: b.totalAmount,
+        }));
+
+        res.status(200).json({
+            message: "Booking list fetched successfully",
+            total: formattedBookings.length,
+            bookings: formattedBookings,
+        });
+    } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res.status(500).json({
+            message: "Failed to fetch bookings",
+            error: error.message,
+        });
+    }
+};
+exports.addBookingCharge = async (req, res) => {
+    try {
+        const { bookingAmount, effectiveFrom } = req.body;
+
+        if (!bookingAmount || !effectiveFrom) {
+            return res.status(400).json({ success: false, message: "All fields are required" });
+        }
+
+        const newCharge = await BookingCharge.create({
+            bookingAmount,
+            effectiveFrom,
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Booking charge added successfully",
+            data: newCharge,
+        });
+    } catch (error) {
+        console.error("Error adding booking charge:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+// 📋 Get all booking charges (public)
+exports.getAllBookingCharges = async (req, res) => {
+    try {
+        const charges = await BookingCharge.find().sort({ createdAt: -1 });
+        res.status(200).json({
+            success: true,
+            data: charges,
+        });
+    } catch (error) {
+        console.error("Error fetching booking charges:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+exports.addCancellationCharge = async (req, res) => {
+    try {
+        const { amount } = req.body;
+
+        if (!req.user || req.user.role !== "Admin") {
+            return res.status(403).json({ success: false, message: "Access denied: Admins only" });
+        }
+
+        if (!amount) {
+            return res.status(400).json({ success: false, message: "Amount is required" });
+        }
+
+        //  Always keep only one active cancellation charge (latest)
+        let charge = await CancellationCharge.findOne();
+
+        if (charge) {
+            charge.amount = amount;
+            await charge.save();
+        } else {
+            charge = await CancellationCharge.create({ amount });
+        }
+
+        res.status(201).json({
+            success: true,
+            message: "Cancellation charge saved successfully",
+            data: charge,
+        });
+    } catch (error) {
+        console.error("Error adding cancellation charge:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+//  Get latest cancellation charge
+exports.getCancellationCharge = async (req, res) => {
+    try {
+        const charge = await CancellationCharge.findOne().sort({ createdAt: -1 });
+        res.status(200).json({
+            success: true,
+            data: charge,
+        });
+    } catch (error) {
+        console.error("Error fetching cancellation charge:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+exports.addCommissionRate = async (req, res) => {
+    try {
+        const { previousRate, effectiveFrom } = req.body;
+
+        // Validate input
+        if (!previousRate || !effectiveFrom) {
+            return res.status(400).json({ success: false, message: "All fields are required" });
+        }
+
+        // Create new commission rate
+        const newRate = await CommissionRate.create({
+            previousRate,
+            effectiveFrom,
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Commission rate added successfully",
+            data: newRate,
+        });
+    } catch (error) {
+        console.error("Error adding commission rate:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+// Get all commission rates (optional, for admin or dashboard)
+exports.getAllCommissionRates = async (req, res) => {
+    try {
+        const rates = await CommissionRate.find().sort({ effectiveFrom: -1 });
+        res.status(200).json({ success: true, data: rates });
+    } catch (error) {
+        console.error("Error fetching commission rates:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
 };

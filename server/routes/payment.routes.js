@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { createPaymentOrder, verifyPayment, cancelPayment,sendTestMailController } = require("../controllers/payment.controller");
+const { createPaymentOrder, verifyPayment, cancelPayment, sendTestMailController } = require("../controllers/payment.controller");
 const { protect } = require("../middleware/auth.middleware");
 
 // Create Razorpay Order
