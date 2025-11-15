@@ -28,7 +28,7 @@ const RefundSchema = new mongoose.Schema(
         refund: {
             mode: {
                 type: String,
-                enum: ["bank_transfer", "original_payment_method", "wallet"],
+                enum: ["bank_transfer", "original_payment_method", "wallet",'razorpay'],
                 required: false,
             },
             bankDetails: {
@@ -42,7 +42,7 @@ const RefundSchema = new mongoose.Schema(
         // Refund Status Tracking
         status: {
             type: String,
-            enum: ["requested", "approved", "rejected", "processed"],
+            enum: ["requested", "completed", "rejected", "processed"],
             default: "requested"
         },
 

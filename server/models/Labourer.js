@@ -11,6 +11,7 @@ const LabourerSchema = new mongoose.Schema({
 
     subject: { type: String, default: '' },
     message: { type: String, default: '' },
+    aadhar: { type: String, default: '' }, // aadhar
 
     serviceCity: { type: String, required: true },
 
@@ -23,6 +24,15 @@ const LabourerSchema = new mongoose.Schema({
         required: function () {
             return this.registrationType === 'Professional';
         }
+    },
+
+    acceptedServices: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Category'
+    }],
+
+    certificate: {
+        type: String
     },
 
     // Only for Individual or Team
@@ -74,13 +84,19 @@ const LabourerSchema = new mongoose.Schema({
     isAvailable: { type: Boolean, default: true },
     trainingStatus: {
         type: String,
-        enum: ['Completed', 'Not Completed'],
+        enum: ['Completed', 'On Going', 'Not Completed', 'Rejected'],
         default: 'Not Completed'
     },
+    registerDate: { type: Date, default: '' },
+    completedJobs: { type: Number, default: 0 },
+    complants: { type: Number, default: 0 },
+    traingScore: { type: Number, default: 70 },
+    acceptedJobs: { type: Number, default: 0 },
     location: {
         lat: { type: Number },
         lng: { type: Number }
     }
+
 
 }, { timestamps: true });
 

@@ -4,11 +4,10 @@ const { v4: uuidv4 } = require("uuid");
 const labourBookingSchema = new mongoose.Schema(
   {
     // Unique Booking ID
-    bookingId: {
+    bookingNo: {
       type: String,
-      unique: true,
       default: function () {
-        return "BK-" + uuidv4().split("-")[0].toUpperCase();
+        return "LB-" + uuidv4().split("-")[0].toUpperCase();
       },
     },
 
@@ -55,7 +54,7 @@ const labourBookingSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       enum: ["Razorpay", "UPI", "NetBanking", "COD"],
-      default: "COD",
+      default: "Razorpay",
     },
     paymentStatus: {
       type: String,

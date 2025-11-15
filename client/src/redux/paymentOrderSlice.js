@@ -1,88 +1,101 @@
 // src/redux/paymentOrderSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import axios from "axios";
 
-// ✅ Create Payment Order (POST /api/payment/order)
+// ✅ PLACE ORDER API
 export const placeOrder = createAsyncThunk(
   "paymentOrder/placeOrder",
-  async ({ bookingId }, { rejectWithValue }) => {
+  async (payload, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem("token");
+      const userId = localStorage.getItem("userId"); // ✅ get userId
 
-      const res = await fetch(
+      if (!token) return rejectWithValue("No token found. Please log in again.");
+      if (!userId) return rejectWithValue("No user ID found. Please log in again.");
+
+      const response = await axios.post(
         "https://apnalabour.onrender.com/api/payment/order",
         {
-          method: "POST",
+          bookingId: payload.bookingId, // ✅ fixed
+          userId: userId,
+        },
+        {
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify({ bookingId }),
         }
       );
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to create order");
-      }
-
-      return data;
+      return response.data;
     } catch (err) {
+      if (err.response && err.response.data) {
+        return rejectWithValue(err.response.data);
+      }
       return rejectWithValue(err.message);
     }
   }
 );
 
-// ✅ Verify Payment (POST /api/payment/verify)
+// ✅ VERIFY PAYMENT API (Updated)
 export const verifyPayment = createAsyncThunk(
   "paymentOrder/verifyPayment",
-  async ({ orderId, paymentId, signature }, { rejectWithValue }) => {
+  async (paymentDetails, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch(
+      if (!token)
+        return rejectWithValue("No token found. Please log in again.");
+
+      const response = await axios.post(
         "https://apnalabour.onrender.com/api/payment/verify",
         {
-          method: "POST",
+          orderId: paymentDetails.orderId,
+          paymentId: paymentDetails.paymentId,
+          signature: paymentDetails.signature,
+          bookingId: paymentDetails.bookingId, // ✅ ADD THIS
+        },
+        {
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify({ orderId, paymentId, signature }),
         }
       );
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || "Payment verification failed");
-      }
-
-      return data;
+      return response.data;
     } catch (err) {
+      if (err.response && err.response.data) {
+        return rejectWithValue(err.response.data);
+      }
       return rejectWithValue(err.message);
     }
   }
 );
 
-// ✅ Slice
 const paymentOrderSlice = createSlice({
   name: "paymentOrder",
   initialState: {
     loading: false,
-    success: false,
-    error: null,
     orderData: null,
+    verifyData: null,
+    error: null,
+    success: false,
+    verifySuccess: false,
   },
   reducers: {
     resetPaymentOrderState: (state) => {
       state.loading = false;
-      state.success = false;
-      state.error = null;
       state.orderData = null;
+      state.verifyData = null;
+      state.error = null;
+      state.success = false;
+      state.verifySuccess = false;
     },
   },
   extraReducers: (builder) => {
     builder
-      // 🟡 placeOrder
+      // ✅ Place Order
       .addCase(placeOrder.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -90,24 +103,30 @@ const paymentOrderSlice = createSlice({
       })
       .addCase(placeOrder.fulfilled, (state, action) => {
         state.loading = false;
-        state.success = true;
         state.orderData = action.payload;
+        state.success = true;
       })
       .addCase(placeOrder.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload;
+        state.error = action.payload || "Something went wrong";
+        state.success = false;
       })
-      // 🟢 verifyPayment
+
+      // ✅ Verify Payment
       .addCase(verifyPayment.pending, (state) => {
         state.loading = true;
+        state.error = null;
+        state.verifySuccess = false;
       })
-      .addCase(verifyPayment.fulfilled, (state) => {
+      .addCase(verifyPayment.fulfilled, (state, action) => {
         state.loading = false;
-        state.success = true;
+        state.verifyData = action.payload;
+        state.verifySuccess = true;
       })
       .addCase(verifyPayment.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload;
+        state.error = action.payload || "Payment verification failed";
+        state.verifySuccess = false;
       });
   },
 });

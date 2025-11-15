@@ -4,7 +4,8 @@ const { v4: uuidv4 } = require("uuid");
 const bookingSchema = new mongoose.Schema(
     {
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-        bookingId: {
+        acceptedLabour: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        bookingNo: {
             type: String,
             unique: true,
             default: function () {
@@ -42,7 +43,7 @@ const bookingSchema = new mongoose.Schema(
         orderId: { type: String },   // Razorpay order id
         signature: { type: String }, // Razorpay signature
 
-        paymentMethod: { type: String, enum: ["Razorpay", "COD"], required: true },
+        paymentMethod: { type: String, enum: ["Razorpay", "COD"], default: "Razorpay", },
         completedAt: { type: Date, default: null },
         bookedAt: { type: Date, default: Date.now },
     },

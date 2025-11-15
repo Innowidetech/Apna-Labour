@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema({
     role: { type: String, enum: ['Admin', 'Customer', 'Labourer'], default: 'Customer' },
     isActive: { type: Boolean, default: true },
     isDeleted: { type: Boolean, default: false },
+    isSuspended: { type: Boolean, default: false },
     password: { type: String, default: null },
     ID: { type: String, default: null },
     // For Google login
