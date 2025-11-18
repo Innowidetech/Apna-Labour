@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 
 const LabourBookingPaymentSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     paymentNo: {
         type: String,
         unique: true,
@@ -34,8 +39,8 @@ const LabourBookingPaymentSchema = new mongoose.Schema({
 
     paymentStatus: {
         type: String,
-        enum: ['Pending', 'Paid', 'Failed'],
-        default: 'Pending'
+        enum: ['Unpaid', 'Pending', 'Paid', 'Failed'],
+        default: 'Unpaid'
     },
 
     paidAt: { type: Date },

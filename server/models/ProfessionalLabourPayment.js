@@ -6,10 +6,14 @@ const ProfessionalLabourPaymentSchema = new mongoose.Schema({
         type: String,
         default: () => "PLP-" + uuidv4().split("-")[0].toUpperCase()
     },
-
+    userId:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     labourerId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Labourer',
+        ref: 'User',
         required: true
     },
 
@@ -30,11 +34,14 @@ const ProfessionalLabourPaymentSchema = new mongoose.Schema({
         enum: ['Razorpay', 'Bank Transfer', 'UPI', 'Wallet', 'Cash'],
         default: 'Razorpay'
     },
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String },
 
     paymentStatus: {
         type: String,
-        enum: ['Pending', 'Paid', 'Failed'],
-        default: 'Pending'
+        enum: ['Unpaid', 'Pending', 'Paid', 'Failed'],
+        default: 'Unpaid'
     },
 
     paidAt: { type: Date },

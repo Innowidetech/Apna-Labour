@@ -11,7 +11,8 @@ const { getAllUsers, approveLabourerTraining, completeTraining,
     getPendingLabourRequests, getCounts, getAllSpecificServices, getSpecificServiceDetails, getGeneralEnquiries,
     getAccountBillingEnquiries, getFeedbacks, replyToContact, markAsRead, getAllRefunds, getBookingDetailsById, addSkill,
     getAllSkills, getAllBookings, addBookingCharge, getAllBookingCharges, addCancellationCharge, getCancellationCharge,
-    addCommissionRate, getAllCommissionRates, getTeamMembers
+    addCommissionRate, getAllCommissionRates, getTeamMembers, getInvoice, getAllCancelledBookingsLite, getBookingStatsByDatePercentage,
+    getMonthlyRevenueStatsByDateRange
 } = require('../controllers/admin.controller');
 const multer = require('multer');
 const { route } = require('./customer.route');
@@ -52,6 +53,8 @@ router.get('/profile', protect, getAdminProfile);
 router.get("/bookings/by-date", protect, authorize("Admin"), getBookingsByDate);
 router.get("/:bookingId/details", protect, authorize("Admin"), getBookingDetailsById)
 router.get('/booking/:userId/details', protect, authorize('Admin'), getCustomerDetailsByUserId);
+router.get("/invoice/:bookingId", protect, authorize("Admin"), getInvoice);
+
 router.get("/most-demanding-services", protect, authorize("Admin"), getTop4DemandingServicesByMonth);
 router.get("/all/customers/filter", protect, authorize("Admin"), getFilteredCustomers); //?city=Karimnagar&status=Active
 router.get("/labourers/professional/:userId", protect, authorize("Admin"), getProfessionalLabourerDetails);
@@ -86,6 +89,7 @@ router.get("/all/skills", protect, authorize("Admin"), getAllSkills)
 
 // bookings and payments
 router.get("/bookings/list", getAllBookings);
+router.get("/booking/cancelled", protect, authorize("Admin"), getAllCancelledBookingsLite);
 
 
 // Reports and Analytics
@@ -95,6 +99,8 @@ router.post("/add/cancellation/charge", protect, authorize("Admin"), addCancella
 router.get("/current/cancellation/charge", getCancellationCharge);
 router.post("/add/commission/rate", protect, authorize("Admin"), addCommissionRate);
 router.get("/all/commission/rates", getAllCommissionRates);
+router.get("/booking/stats-range-percent", protect, authorize("Admin"), getBookingStatsByDatePercentage);// fromDate=2025-01-01&toDate=2025-01-31
+router.get("/booking/monthly-stats-range", protect, authorize("Admin"), getMonthlyRevenueStatsByDateRange);// fromDate=2025-01-01&toDate=2025-01-31
 
 // Refund Management
 router.get("/refund", protect, authorize("Admin"), getAllRefunds);

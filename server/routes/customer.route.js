@@ -9,7 +9,7 @@ const { addToCart, getCart, removeFromCart, bookService, bookLabourer, searchSer
     deleteNotification, getHeroByCategory, getSpecificServiceDetails, addToCartItem, getLabourersByType, addLabourerReview,
     createLabourBooking, getLabourBookings, saveSlot, getSpecificLabourDetails, getUserProfileName, deleteAccount,
     getUserBookings, getUserPayments, getUserReviews, getUserNotifications, getAllHelpCenters, getHelpCenterByHeading,
-    createRefundRequest, cancelBooking, getBookingDetails, clearCart
+    createRefundRequest, cancelBooking, getBookingDetails, clearCart, updateLocation, getcities
 } = require('../controllers/customer.controller')
 
 const router = express.Router();
@@ -75,6 +75,9 @@ router.get("/accordian", protect, getAllHelpCenters);
 router.get('/get-help-center/:heading', getHelpCenterByHeading);
 //router.put("/cancel/:bookingId", protect, cancelBooking);
 router.post("/refund/create/:id", protect, authorize('Customer'), createRefundRequest);
+
+router.post("/location/update", protect, authorize('Customer'), updateLocation);
+router.get("/cities", getcities);
 
 module.exports = router;
 

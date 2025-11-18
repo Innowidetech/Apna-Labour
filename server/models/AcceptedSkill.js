@@ -9,19 +9,8 @@ const AcceptedSkillSchema = new mongoose.Schema({
 
     //  Single or multiple skills from enum list
     skills: [{
-        type: String,
-        enum: [
-            'Lifting heavy items',
-            'Loading & unloading',
-            'Packing help',
-            'Digging/ ground work',
-            'Furniture rearrangement',
-            'Cleaning assistance',
-            'Garden work',
-            'Construction site helper',
-            'Painting assistant',
-            'Labour for events'
-        ],
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Skill',
         required: true
     }],
 

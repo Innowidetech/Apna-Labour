@@ -6,6 +6,7 @@ const { v4: uuid } = require("uuid");
 require("dotenv").config();
 const TrainingDetails = require('../models/TrainingDetails');
 const Cart = require('../models/Cart');
+const axios = require("axios");
 const Booking = require("../models/Booking");
 const Payment = require("../models/Payment");
 const Review = require("../models/Review");
@@ -2173,6 +2174,87 @@ exports.getBookingDetails = async (req, res) => {
         res.status(500).json({
             message: "Error fetching booking details",
             error: error.message,
+        });
+    }
+};
+
+exports.updateLocation = async (req, res) => {
+    try {
+        const { latitude, longitude } = req.body;
+        const userId = req.user.id; // coming from auth middleware
+
+        if (!latitude || !longitude) {
+            return res.status(400).json({
+                success: false,
+                message: "Latitude and Longitude are required",
+            });
+        }
+
+        // Reverse Geocoding API (OpenStreetMap)
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`;
+
+        const result = await axios.get(url, {
+            headers: { "User-Agent": "ApnaLabour-App-1.0" },
+        });
+
+        const addr = result.data.address;
+
+        // Structured address object for DB
+        const updatedAddress = {
+            HNo: "",
+            buildingName: "",
+            street: addr.road || "",
+            area: addr.suburb || addr.neighbourhood || "",
+            landmark: addr.attraction || "",
+            townCity: addr.city || addr.town || addr.village || "",
+            pincode: addr.postcode || "",
+            state: addr.state || "",
+            location: {
+                lat: latitude,
+                lng: longitude,
+            },
+        };
+
+        // Update customer document
+        const updatedCustomer = await Customer.findOneAndUpdate(
+            { userId },
+            { address: updatedAddress },
+            { new: true, upsert: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Location updated successfully",
+            data: updatedCustomer,
+        });
+    } catch (error) {
+        console.log(
+            "Location update error:",
+            error.response?.data || error.message || error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to update location",
+            error: error.response?.data || error.message
+        });
+    }
+};
+
+exports.getcities = async (req, res) => {
+    try {
+        const cities = await Customer.distinct("address.townCity");
+
+        res.status(200).json({
+            success: true,
+            count: cities.length,
+            cities
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
         });
     }
 };

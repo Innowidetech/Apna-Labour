@@ -21,6 +21,7 @@ const bookingSchema = new mongoose.Schema(
             },
         ],
 
+
         // Price details
         subtotal: { type: Number, required: true },
         tax: { type: Number, required: true },
@@ -34,15 +35,20 @@ const bookingSchema = new mongoose.Schema(
 
         status: {
             type: String,
-            enum: ["Pending", "Payment Pending", "Confirmed", "Cancelled", "Completed", "Refund Requested", "Refunded"],
+            enum: ["Pending", "Confirmed", "Cancelled", "Completed", "Refund Requested", "Refunded"],
             default: "Pending",
         },
+        labourPaymentStatus: {
+            type: String,
+            enum: ["Unpaid", "Paid", "Failed"],
+            default: "Unpaid",
+        },
 
-        // Payment details (for Razorpay verification)
-        paymentId: { type: String }, // Razorpay payment id
-        orderId: { type: String },   // Razorpay order id
-        signature: { type: String }, // Razorpay signature
-
+        labourWorkStatus: {
+            type: String,
+            enum: ["Started", "In Progress", "Completed"],
+            default: "In Progress",
+        },
         paymentMethod: { type: String, enum: ["Razorpay", "COD"], default: "Razorpay", },
         completedAt: { type: Date, default: null },
         bookedAt: { type: Date, default: Date.now },

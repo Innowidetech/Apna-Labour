@@ -20,6 +20,10 @@ const labourBookingSchema = new mongoose.Schema(
     bookingDate: { type: Date },
     timeSlot: { type: String },
 
+    LabourUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     // Labourer being booked
     labourer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -48,6 +52,11 @@ const labourBookingSchema = new mongoose.Schema(
       default: "full",
     },
     dailyAmount: { type: Number }, // only for Team daily payment
+    labourPaymentStatus: {
+      type: String,
+      enum: ["Unpaid", "Paid", "Failed"],
+      default: "Unpaid",
+    },
 
     // Cost and payment
     totalCost: { type: Number, required: true },

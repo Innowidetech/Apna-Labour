@@ -37,19 +37,8 @@ const LabourerSchema = new mongoose.Schema({
 
     // Only for Individual or Team
     skill: {
-        type: String,
-        enum: [
-            'Lifting heavy items',
-            'Loading & unloading',
-            'Packing help',
-            'Digging/ ground work',
-            'Furniture rearrangement',
-            'Cleaning assistance',
-            'Garden work',
-            'Construction site helper',
-            'Painting assistant',
-            'Labour for events'
-        ],
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Skill",
         required: function () {
             return this.registrationType === 'Individual' || this.registrationType === 'Team';
         }

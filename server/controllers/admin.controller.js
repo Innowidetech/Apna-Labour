@@ -27,6 +27,7 @@ const CommissionRate = require('../models/CommissionRate');
 const CancellationCharge = require('../models/CancellationCharge');
 const Cancellation = require('../models/Cancellation');
 const TeamMember = require('../models/TeamMember');
+const Payment = require('../models/Payment');
 const mongoose = require('mongoose');
 
 const {
@@ -1049,6 +1050,60 @@ exports.getBookingsByDate = async (req, res) => {
             message: "Server error",
             error: error.message,
         });
+    }
+};
+exports.getInvoice = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+
+        // Booking
+        const booking = await Booking.findById(bookingId);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
+        // User
+        const user = await User.findById(booking.user);
+
+        // Payment
+        const payment = await Payment.findOne({ bookingId: bookingId });
+
+        return res.json({
+            success: true,
+            invoice: {
+                invoiceNo: "INV-" + booking.bookingNo,
+                date: booking.createdAt,
+                status: booking.status,
+
+                customer: {
+                    name: user?.name,
+                    email: user?.email,
+                    mobile: user?.mobileNumber
+                },
+
+                bookingInfo: {
+                    bookingId: booking._id,
+                    bookingNo: booking.bookingNo,
+                    items: booking.items,
+                    subtotal: booking.subtotal,
+                    tax: booking.tax,
+                    tip: booking.tip,
+                    totalAmount: booking.totalAmount
+                },
+
+                paymentInfo: {
+                    amount: payment?.amount,
+                    orderId: payment?.orderId,
+                    paymentId: payment?.paymentId,
+                    status: payment?.status,
+                    paidAt: payment?.updatedAt
+                }
+            }
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ success: false, message: "Server Error" });
     }
 };
 exports.getBookingDetailsById = async (req, res) => {
@@ -2727,6 +2782,99 @@ exports.getAllBookings = async (req, res) => {
         });
     }
 };
+
+exports.getAllCancelledBookingsLite = async (req, res) => {
+    try {
+        const latestCharge = await CancellationCharge.findOne().sort({ updatedAt: -1 });
+
+        const bookings = await Booking.aggregate([
+            { $match: { status: "Cancelled" } },
+
+            // 1️⃣ JOIN Cancellation
+            {
+                $lookup: {
+                    from: "cancellations",
+                    localField: "_id",
+                    foreignField: "bookingId",
+                    as: "cancelInfo"
+                }
+            },
+
+            // 2️⃣ Lookup user who cancelled
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "cancelInfo.userId",
+                    foreignField: "_id",
+                    as: "cancelUser"
+                }
+            },
+
+            // 3️⃣ Add fields safely (reason, cancelledBy)
+            {
+                $addFields: {
+                    reason: {
+                        $cond: [
+                            { $gt: [{ $size: "$cancelInfo" }, 0] },
+                            { $arrayElemAt: ["$cancelInfo.reason", 0] },
+                            null
+                        ]
+                    },
+                    cancelledBy: {
+                        userId: {
+                            $cond: [
+                                { $gt: [{ $size: "$cancelUser" }, 0] },
+                                { $arrayElemAt: ["$cancelUser._id", 0] },
+                                null
+                            ]
+                        },
+                        name: {
+                            $cond: [
+                                { $gt: [{ $size: "$cancelUser" }, 0] },
+                                { $arrayElemAt: ["$cancelUser.name", 0] },
+                                null
+                            ]
+                        }
+                    }
+                }
+            },
+
+            // 4️⃣ Final projection
+            {
+                $project: {
+                    bookingId: "$_id",
+                    bookingNo: 1,
+                    acceptedLabour: 1,
+                    subtotal: 1,
+                    bookedAt: 1,
+                    status: 1,
+                    reason: 1,
+                    cancelledBy: 1,
+                    cancellationCharge: { $literal: latestCharge.amount },
+                    refundAmount: {
+                        $max: [
+                            { $subtract: ["$totalAmount", latestCharge.amount] },
+                            0
+                        ]
+                    }
+                }
+            },
+
+            { $sort: { bookedAt: -1 } }
+        ]);
+
+        return res.json({
+            success: true,
+            count: bookings.length,
+            bookings
+        });
+
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ success: false, message: "Server error" });
+    }
+};
+
 exports.addBookingCharge = async (req, res) => {
     try {
         const { bookingAmount, effectiveFrom } = req.body;
@@ -2846,5 +2994,156 @@ exports.getAllCommissionRates = async (req, res) => {
     } catch (error) {
         console.error("Error fetching commission rates:", error);
         res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+exports.getBookingStatsByDatePercentage = async (req, res) => {
+    try {
+        const { fromDate, toDate } = req.query;
+
+        if (!fromDate || !toDate) {
+            return res.status(400).json({
+                success: false,
+                message: "fromDate and toDate are required"
+            });
+        }
+
+        const from = new Date(fromDate);
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);  // include whole day
+
+        const result = await Booking.aggregate([
+            {
+                $match: {
+                    bookedAt: { $gte: from, $lte: to }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    subtotalSum: { $sum: "$subtotal" },
+                    taxSum: { $sum: "$tax" },
+                    tipSum: { $sum: "$tip" }
+                }
+            }
+        ]);
+
+        if (result.length === 0) {
+            return res.json({
+                success: true,
+                message: "No bookings in this date range",
+                data: null
+            });
+        }
+
+        const { subtotalSum, taxSum, tipSum } = result[0];
+
+        // Calculations
+        const labourerShare = subtotalSum * 0.80;
+        const serviceCharges = subtotalSum * 0.20;
+        const bookingCharges = taxSum + tipSum;
+
+        const totalForPercentage = labourerShare + serviceCharges + bookingCharges;
+
+        // Percentages
+        const bookingPercentage = (bookingCharges / totalForPercentage) * 100;
+        const servicePercentage = (serviceCharges / totalForPercentage) * 100;
+        const labourPercentage = (labourerShare / totalForPercentage) * 100;
+
+        return res.json({
+            success: true,
+            data: {
+                subtotalSum,
+                bookingCharges,
+                serviceCharges,
+                labourerShare,
+                percentages: {
+                    bookingPercentage: bookingPercentage.toFixed(2),
+                    servicePercentage: servicePercentage.toFixed(2),
+                    labourPercentage: labourPercentage.toFixed(2)
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+};
+
+exports.getMonthlyRevenueStatsByDateRange = async (req, res) => {
+    try {
+        const { fromDate, toDate } = req.query;
+
+        if (!fromDate || !toDate) {
+            return res.status(400).json({
+                success: false,
+                message: "fromDate and toDate are required"
+            });
+        }
+
+        const from = new Date(fromDate);
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999); // include end of last day
+
+        const monthlyStats = await Booking.aggregate([
+            {
+                $match: {
+                    bookedAt: { $gte: from, $lte: to },
+                    status: { $in: ["Completed", "Confirmed"] }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        month: { $month: "$bookedAt" },
+                        year: { $year: "$bookedAt" }
+                    },
+                    subtotalSum: { $sum: "$subtotal" },
+                    taxSum: { $sum: "$tax" },
+                    tipSum: { $sum: "$tip" }
+                }
+            },
+            { $sort: { "_id.year": 1, "_id.month": 1 } }
+        ]);
+
+        const months = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ];
+
+        const result = monthlyStats.map(stat => {
+            const monthIndex = stat._id.month - 1;
+
+            const subtotal = stat.subtotalSum;
+            const companyRevenue = subtotal * 0.20 + stat.taxSum + stat.tipSum;
+            const labourEarnings = subtotal * 0.80;
+
+            return {
+                month: months[monthIndex],
+                year: stat._id.year,
+                companyRevenue,
+                labourEarnings
+            };
+        });
+
+        return res.json({
+            success: true,
+            fromDate,
+            toDate,
+            data: result
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
     }
 };
