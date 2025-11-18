@@ -28,6 +28,7 @@ const CancellationCharge = require('../models/CancellationCharge');
 const Cancellation = require('../models/Cancellation');
 const TeamMember = require('../models/TeamMember');
 const Payment = require('../models/Payment');
+const labourBooking = require('../models/labourBooking');
 const mongoose = require('mongoose');
 
 const {
@@ -1654,9 +1655,9 @@ exports.getIndividualLabourers = async (req, res) => {
 
         if (skill) filter.skill = skill;
 
-        // Fetch labourers with full user details
         const individuals = await Labourer.find(filter)
-            .populate("userId", "-password -otp -otpExpiry -googleId");
+            .populate("userId", "name mobileNumber email -_id");
+        // Only fetch required fields
 
         if (individuals.length === 0) {
             return res.status(200).json({
@@ -1666,7 +1667,6 @@ exports.getIndividualLabourers = async (req, res) => {
             });
         }
 
-        // IDs for ratings and completed jobs
         const labourerIds = individuals.map(l => l._id);
 
         const ratingsData = await Review.aggregate([
@@ -1679,7 +1679,6 @@ exports.getIndividualLabourers = async (req, res) => {
             { $group: { _id: "$labourer", completedJobsCount: { $sum: 1 } } }
         ]);
 
-        // Lookup maps
         const ratingMap = {};
         ratingsData.forEach(r => {
             ratingMap[r._id.toString()] = {
@@ -1693,14 +1692,19 @@ exports.getIndividualLabourers = async (req, res) => {
             completedMap[c._id.toString()] = c.completedJobsCount;
         });
 
-        // Merge all data and include direct userId
+        // 👉 FINAL MERGED OUTPUT
         const result = individuals.map(p => {
             const id = p._id.toString();
             const obj = p.toObject();
 
             return {
-                ...obj,
-                userId: p.userId?._id || null, // ✅ direct userId
+                labourerId: p._id,                   // 👈 Add Labourer ID
+                name: p.userId?.name || null,        // 👈 Add User Name
+                mobileNumber: p.userId?.mobileNumber || null,  // 👈 Add Phone
+                email: p.userId?.email || null,      // Optional
+
+                ...obj,  // existing labourer fields
+
                 averageRating: ratingMap[id]?.averageRating || 0,
                 totalReviews: ratingMap[id]?.totalReviews || 0,
                 completedJobsCount: completedMap[id] || p.completedJobs || 0
@@ -1735,9 +1739,9 @@ exports.getTeamLabourers = async (req, res) => {
 
         if (skill) filter.skill = skill;
 
-        // Fetch team labourers with populated user and category info
+        // Fetch team labourers
         const teams = await Labourer.find(filter)
-            .populate("userId", "-password -otp -otpExpiry -googleId")
+            .populate("userId", "name mobileNumber email")
             .populate("category", "title image");
 
         if (teams.length === 0) {
@@ -1748,22 +1752,31 @@ exports.getTeamLabourers = async (req, res) => {
             });
         }
 
-        // Labourer IDs for aggregation
         const labourerIds = teams.map(l => l._id);
 
-        // Get ratings
+        // ⭐ Get Ratings
         const ratingsData = await Review.aggregate([
             { $match: { targetType: "Labourer", targetId: { $in: labourerIds } } },
             { $group: { _id: "$targetId", averageRating: { $avg: "$rating" }, totalReviews: { $sum: 1 } } }
         ]);
 
-        // Get completed jobs
-        const completedJobsData = await Booking.aggregate([
-            { $match: { labourer: { $in: labourerIds }, status: "Completed" } },
-            { $group: { _id: "$labourer", completedJobsCount: { $sum: 1 } } }
+        // ⭐ Get Completed Jobs FROM labourBooking
+        const completedJobsData = await labourBooking.aggregate([
+            {
+                $match: {
+                    labourer: { $in: labourerIds },
+                    labourWorkStatus: "Completed"
+                }
+            },
+            {
+                $group: {
+                    _id: "$labourer",
+                    completedJobsCount: { $sum: 1 }
+                }
+            }
         ]);
 
-        // Lookup maps
+        // Maps
         const ratingMap = {};
         ratingsData.forEach(r => {
             ratingMap[r._id.toString()] = {
@@ -1777,17 +1790,24 @@ exports.getTeamLabourers = async (req, res) => {
             completedMap[c._id.toString()] = c.completedJobsCount;
         });
 
-        // Merge data and include direct userId
+        // ⭐ Final Result Merge
         const result = teams.map(p => {
             const id = p._id.toString();
             const obj = p.toObject();
 
             return {
+                labourerId: p._id,
+                name: p.userId?.name || null,
+                mobileNumber: p.userId?.mobileNumber || null,
+                email: p.userId?.email || null,
+
                 ...obj,
-                userId: p.userId?._id || null, // ✅ direct userId
+
                 averageRating: ratingMap[id]?.averageRating || 0,
                 totalReviews: ratingMap[id]?.totalReviews || 0,
-                completedJobsCount: completedMap[id] || p.completedJobs || 0
+
+                // ⭐ completed jobs from labourBooking
+                completedJobsCount: completedMap[id] || 0
             };
         });
 

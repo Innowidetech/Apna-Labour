@@ -42,7 +42,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/labourer', labourerRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/user', userRouter);
-app.use('/api/services', landingPageRouter);
+app.use('/api/landingPage', landingPageRouter);
 app.use('/api/payment', paymentRouter);
 
 

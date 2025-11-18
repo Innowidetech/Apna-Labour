@@ -10,6 +10,16 @@ const labourBookingSchema = new mongoose.Schema(
         return "LB-" + uuidv4().split("-")[0].toUpperCase();
       },
     },
+    accptedLabour: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    labourWorkStatus: {
+      type: String,
+      enum: ["Started", "In Progress", "Completed"],
+      default: "In Progress",
+    },
 
     // Customer who made the booking
     UserId: {

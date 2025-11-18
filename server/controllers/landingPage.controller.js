@@ -1,4 +1,5 @@
 const { Category, SubCategory, ServiceType } = require('../models/Services');
+const Booking = require("../models/Booking");
 
 exports.getAllLandingPages = async (req, res) => {
     try {
@@ -92,4 +93,98 @@ exports.getUnitsBySpecificService = async (req, res) => {
 };
 
 
+exports.getTopBookedServices = async (req, res) => {
+    try {
+        const topServices = await Booking.aggregate([
+            { $unwind: "$items" },
 
+            // 1️⃣ Group by Unit and count bookings
+            {
+                $group: {
+                    _id: "$items.unit",
+                    bookedCount: { $sum: 1 }
+                }
+            },
+
+            // 2️⃣ Lookup Unit → get specificService
+            {
+                $lookup: {
+                    from: "units",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "unitData"
+                }
+            },
+            { $unwind: "$unitData" },
+
+            // 3️⃣ Lookup SpecificService
+            {
+                $lookup: {
+                    from: "specificservices",
+                    localField: "unitData.specificService",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            { $unwind: "$serviceData" },
+
+            // 4️⃣ Lookup ServiceType (optional)
+            {
+                $lookup: {
+                    from: "servicetypes",
+                    localField: "serviceData.serviceType",
+                    foreignField: "_id",
+                    as: "serviceTypeData"
+                }
+            },
+            { $unwind: "$serviceTypeData" },
+
+            // 5️⃣ Final projection of required fields
+            {
+                $project: {
+                    _id: 0,
+                    specificServiceId: "$serviceData._id",
+                    title: "$serviceData.title",
+                    image: "$serviceData.image",
+                    startingPrice: "$serviceData.startingPrice",
+                    totalReviews: "$serviceData.totalReviews",
+                    averageRating: "$serviceData.averageRating",
+                    serviceType: "$serviceTypeData.title",
+                    bookedCount: 1
+                }
+            },
+
+            // 6️⃣ Group by specificService to avoid duplicates
+            {
+                $group: {
+                    _id: "$specificServiceId",
+                    title: { $first: "$title" },
+                    image: { $first: "$image" },
+                    startingPrice: { $first: "$startingPrice" },
+                    totalReviews: { $first: "$totalReviews" },
+                    averageRating: { $first: "$averageRating" },
+                    serviceType: { $first: "$serviceType" },
+                    bookedCount: { $sum: "$bookedCount" }
+                }
+            },
+
+            // 7️⃣ Sort and Limit top 8
+            { $sort: { bookedCount: -1 } },
+            { $limit: 8 }
+        ]);
+
+        res.status(200).json({
+            success: true,
+            message: "Top 8 most booked services",
+            data: topServices
+        });
+
+    } catch (error) {
+        console.error("Error fetching top booked services:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+};

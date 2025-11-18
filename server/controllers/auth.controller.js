@@ -263,16 +263,15 @@ exports.adminLogin = async function (req, res) {
 
         // Generate JWT
         const token = jwt.sign(
-            { id: admin._id, role: admin.role },
-            process.env.JWT_SECRET || 'your_jwt_secret',
-            { expiresIn: '1d' }
+            { userId: admin._id, role: admin.role },
+            process.env.JWT_SECRET || 'your_jwt_secret'
         );
 
         res.json({
             success: true,
             token,
             admin: {
-                id: admin._id,
+                userId: admin._id,
                 ID: admin.ID,
                 name: admin.name,
                 role: admin.role
