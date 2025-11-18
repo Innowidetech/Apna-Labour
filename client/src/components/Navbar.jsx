@@ -6,7 +6,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { Menu, X, Search, MapPin, ShoppingCart, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
-import { logout } from "../redux/authSlice"; // ✅ import logout
+import { logout } from "../redux/authSlice"; 
+import apnaLogo from "../assets/apnaLogo.jpeg";  
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false); // mobile menu
@@ -91,11 +92,17 @@ const Navbar = () => {
         <div className="flex justify-between h-16 items-center">
           {/* Logo */}
           <div
-            className="flex-shrink-0 text-2xl font-bold italic text-blue-900 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer"
             onClick={() => navigate("/")}
           >
-            Apna Labour
+            <img
+              src={apnaLogo}
+              alt="Apna Labour Logo"
+              className="h-10 w-auto object-contain"
+            />
+
           </div>
+
 
           {/* Search + Location (Desktop) */}
           <div className="hidden md:flex items-center space-x-2">
@@ -108,17 +115,25 @@ const Navbar = () => {
               />
             </div>
 
-            <button className="flex items-center bg-blue-900 text-white px-4 py-2 rounded-lg text-sm">
-              <MapPin className="w-4 h-4 mr-2" />
-              Add Your Location
+            <button className="flex items-center  text-white px-4 py-2 rounded-lg ">
+              {/* Blue Icon Only */}
+              <MapPin className="w-10 h-10 p-2  rounded-lg mr-6 bg-[#052c42]" />
+
+              <div className="flex flex-col items-start leading-tight">
+                <span className="text-sm font-semibold text-[#003049]">Add Your Location</span>
+                <span className="text-[10px] opacity-80 text-[#003049]">
+                  To See Services In Your Area
+                </span>
+              </div>
             </button>
+
           </div>
 
           {/* Right Section */}
           <div className="hidden md:flex items-center space-x-6 relative">
             <ShoppingCart
               className="w-5 h-5 text-gray-700 cursor-pointer"
-              onClick={() => navigate("/viewcart")}
+              onClick={() => navigate("/cart")}
             />
 
             {/* User Dropdown */}
@@ -175,7 +190,7 @@ const Navbar = () => {
 
             {/* Hide "Become a helper" after login */}
             {!user && (
-              <a href="/become-helper" className="text-blue-900 font-semibold">
+              <a href="/become-helper" className="text-[#003049] font-semibold">
                 Become a helper
               </a>
             )}
@@ -205,7 +220,7 @@ const Navbar = () => {
             />
           </div>
 
-          <button className="flex items-center bg-blue-900 text-white px-4 py-2 rounded-lg text-sm w-full">
+          <button className="flex items-center bg-[#003049] text-white px-4 py-2 rounded-lg text-sm w-full">
             <MapPin className="w-4 h-4 mr-2" />
             <span>Add Your Location</span>
           </button>
@@ -225,19 +240,19 @@ const Navbar = () => {
                 </button>
                 <a
                   href="/become-helper"
-                  className="text-blue-900 font-semibold"
+                  className="text-[#003049] font-semibold"
                 >
                   Become a helper
                 </a>
               </>
             ) : (
               <>
-                  <button
-                    onClick={() => navigate("/account")}
-                    className="w-full border border-gray-300 rounded-md py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
-                  >
-                    Account
-                  </button>
+                <button
+                  onClick={() => navigate("/account")}
+                  className="w-full border border-gray-300 rounded-md py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+                >
+                  Account
+                </button>
                 <button
                   onClick={handleLogout}
                   className="w-full border border-red-400 text-red-600 rounded-md py-2 text-sm font-medium hover:bg-red-50"
